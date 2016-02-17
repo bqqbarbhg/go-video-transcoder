@@ -5,5 +5,8 @@ export GOTR_STORAGE_URL_PATH=/uploads/
 export GOTR_TEMP_PATH=bin/temp
 export GOTR_SERVE_PATH=bin/serve
 
+mkdir -p $GOTR_TEMP_PATH
+mkdir -p $GOTR_SERVE_PATH
+
 ./go-video-transcoder
 

@@ -35,6 +35,14 @@ var storageUri string
 
 var requestID int32
 
+func logError(err error, context string, action string) {
+	if err != nil {
+		log.Printf("%s: %s failed: %s", context, action, err.Error())
+	} else {
+		log.Printf("%s: %s succeeded", context, action)
+	}
+}
+
 func authenticate(r *http.Request) (user string, err error) {
 
 	// Request GET /o/auth2/userinfo with the bearer token
@@ -153,30 +161,21 @@ func processVideoFast(video *videoToTranscode) {
 
 	// Extract the rotation from the metadata
 	rotation, err := transcode.ExtractRotation(video.srcPath)
+	logError(err, video.srcPath, "Extract rotation")
 	if err == nil {
 		video.rotation = rotation
-	} else {
-		log.Printf("%s: Failed to extract rotation: %s", video.srcPath, err.Error())
 	}
 
 	// Generate a thumbnail for the video
 	err = generateThumbnail(video, 0.3)
-	if err != nil {
-		log.Printf("%s: Failed to generate thumbnail: %s", video.srcPath, err.Error())
-	} else {
-		log.Printf("%s: Succesfully generated thumbnail", video.srcPath)
-	}
+	logError(err, video.srcPath, "Generate thumbnail")
 
 	// Transcode a quick, low quality version to make the service responsive
 	err = transcodeVideo(video, transcode.QualityLow)
-	if err != nil {
-		log.Printf("%s: Failed to transcode video: %s", video.srcPath, err.Error())
-	} else {
-		log.Printf("%s: Succesfully transcoded low-quality version", video.srcPath)
-	}
+	logError(err, video.srcPath, "Transcode low-quality")
 
 	// Queue the full quality transcoding
-	slowProcessQueue.Add(func() {
+	slowProcessQueue.AddBlocking(func() {
 		processVideoSlow(video)
 	})
 }
@@ -185,19 +184,11 @@ func processVideoSlow(video *videoToTranscode) {
 
 	// Transcode a better quality version of the video
 	err := transcodeVideo(video, transcode.QualityHigh)
-	if err != nil {
-		log.Printf("%s: Failed to transcode video: %s", video.srcPath, err.Error())
-	} else {
-		log.Printf("%s: Succesfully transcoded high-quality version", video.srcPath)
-	}
+	logError(err, video.srcPath, "Transcode high-quality")
 
 	// Remove the source file as it's not needed anymore
 	err = os.Remove(video.srcPath)
-	if err != nil {
-		log.Printf("%s: Failed to delete source file: %s", video.srcPath, err.Error())
-	} else {
-		log.Printf("%s: Succesfully deleted source file", video.srcPath)
-	}
+	logError(err, video.srcPath, "Delete source file")
 }
 
 func wrappedHandler(inner func(http.ResponseWriter, *http.Request) (int, error)) func(http.ResponseWriter, *http.Request) {
@@ -310,9 +301,25 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	log.Printf("%s: Downloaded video data", video.srcPath)
 
 	// Process the video
-	fastProcessQueue.Add(func() {
+	didAdd := fastProcessQueue.AddIfSpace(func() {
 		processVideoFast(video)
 	})
+
+	// If there is no space in the work queue delete the temporary files
+	if !didAdd {
+		log.Printf("%s: Process queue full: cancelling processsing", video.srcPath)
+
+		err := os.Remove(video.srcPath)
+		logError(err, video.srcPath, "Delete source file")
+
+		err = serveCollection.Delete(video.servePath, user)
+		logError(err, video.srcPath, "Delete serve video file")
+
+		err = serveCollection.Delete(video.thumbServePath, user)
+		logError(err, video.srcPath, "Delete serve thumbnail file")
+
+		return http.StatusServiceUnavailable, errors.New("Process queue full")
+	}
 
 	ret := struct {
 		Video     string `json:"video"`
@@ -346,17 +353,8 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	videoErr := serveCollection.Delete(serveVideoPath, user)
 	thumbErr := serveCollection.Delete(serveThumbPath, user)
 
-	// Logging
-	if videoErr != nil {
-		log.Printf("Failed to delete %s: %s", serveVideoPath, videoErr.Error())
-	} else {
-		log.Printf("Deleted %s", serveVideoPath)
-	}
-	if thumbErr != nil {
-		log.Printf("Failed to delete %s: %s", serveThumbPath, thumbErr.Error())
-	} else {
-		log.Printf("Deleted %s", serveThumbPath)
-	}
+	logError(videoErr, serveVideoPath, "Delete file")
+	logError(thumbErr, serveThumbPath, "Delete file")
 
 	if videoErr == nil && thumbErr == nil {
 		w.WriteHeader(http.StatusNoContent)

@@ -9,9 +9,19 @@ type WorkQueue struct {
 	stop chan int
 }
 
-// Queue new work to be executed in the queue
-func (self *WorkQueue) Add(work Work) {
+// Queue new work to be executed in the queue, block if full
+func (self *WorkQueue) AddBlocking(work Work) {
 	self.work <- work
+}
+
+// Queue new work to be executed in the queue, return if full
+func (self *WorkQueue) AddIfSpace(work Work) bool {
+	select {
+	case self.work <- work:
+		return true
+	default:
+		return false
+	}
 }
 
 // Abandon all the work in the queue and stop working
