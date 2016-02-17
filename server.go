@@ -32,6 +32,7 @@ var serveBase string
 
 var layersApiUri string
 var storageUri string
+var apiUri string
 
 var requestID int32
 
@@ -100,6 +101,8 @@ type videoToTranscode struct {
 	thumbDstPath   string
 	thumbServePath string
 	thumbUrl       string
+
+	deleteUrl string
 
 	owner string
 
@@ -274,6 +277,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			thumbServePath: serveThumbPath,
 			thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
 
+			deleteUrl: fmt.Sprintf("%s/%s", apiUri, token),
+
 			owner: user,
 		}
 		break
@@ -324,9 +329,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	ret := struct {
 		Video     string `json:"video"`
 		Thumbnail string `json:"thumbnail"`
+		DeleteUrl string `json:"deleteUrl"`
 	}{
 		video.url,
 		video.thumbUrl,
+		video.deleteUrl,
 	}
 	err = json.NewEncoder(w).Encode(ret)
 	if err != nil {
@@ -377,6 +384,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 func main() {
 	layersApiUri = strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 	storageUri = strings.TrimSuffix(layersApiUri+os.Getenv("GOTR_STORAGE_URL_PATH"), "/")
+	apiUri = strings.TrimSuffix(layersApiUri+os.Getenv("GOTR_API_URL_PATH"), "/")
 	tempBase = os.Getenv("GOTR_TEMP_PATH")
 	serveBase = os.Getenv("GOTR_SERVE_PATH")
 
