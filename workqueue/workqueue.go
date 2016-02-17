@@ -44,9 +44,10 @@ func worker(workQueue *WorkQueue) {
 // Create a new WorkQueue
 // workerCount: Number of concurrent processes to use
 func New(workerCount int) *WorkQueue {
-	workQueue := new(WorkQueue)
-	workQueue.work = make(chan Work, 1024)
-	workQueue.stop = make(chan int)
+	workQueue := &WorkQueue{
+		work: make(chan Work, 1024),
+		stop: make(chan int),
+	}
 
 	for i := 0; i < workerCount; i++ {
 		go worker(workQueue)
