@@ -277,7 +277,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			thumbServePath: serveThumbPath,
 			thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
 
-			deleteUrl: fmt.Sprintf("%s/%s", apiUri, token),
+			deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
 
 			owner: user,
 		}
