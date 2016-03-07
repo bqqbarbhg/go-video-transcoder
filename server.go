@@ -383,8 +383,12 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 func main() {
 	layersApiUri = strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
-	storageUri = strings.TrimSuffix(layersApiUri+os.Getenv("GOTR_STORAGE_URL_PATH"), "/")
-	apiUri = strings.TrimSuffix(layersApiUri+os.Getenv("GOTR_API_URL_PATH"), "/")
+	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
+	if appUri == "" {
+		appUri = layersApiUri
+	}
+	storageUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_STORAGE_URL_PATH"), "/")
+	apiUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_API_URL_PATH"), "/")
 	tempBase = os.Getenv("GOTR_TEMP_PATH")
 	serveBase = os.Getenv("GOTR_SERVE_PATH")
 
