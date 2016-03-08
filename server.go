@@ -22,6 +22,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
+import _ "crypto/sha512"
+
 var serveCollection *ownedfile.Collection = ownedfile.NewCollection()
 
 var fastProcessQueue = workqueue.New(4)
