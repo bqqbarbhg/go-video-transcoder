@@ -48,13 +48,18 @@ func logError(err error, context string, action string) {
 
 func authenticate(r *http.Request) (user string, err error) {
 
+	authorization := r.Header.Get("Authorization")
+	if authorization == "" {
+		return "", errors.New("No Authorization header provided")
+	}
+
 	// Request GET userinfo-endpoint with the bearer token
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", authUri, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Add("Authorization", r.Header.Get("Authorization"))
+	req.Header.Add("Authorization", authorization)
 	req.Header.Add("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -95,6 +100,7 @@ func generateToken() (string, error) {
 }
 
 type videoToTranscode struct {
+	dlPath    string
 	srcPath   string
 	dstPath   string
 	servePath string
@@ -239,6 +245,24 @@ func authenticatedHandler(inner func(http.ResponseWriter, *http.Request, string)
 	}
 }
 
+func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, user string) *videoToTranscode {
+	return &videoToTranscode{
+		dlPath:    path.Join(tempBase, token+".dl.mp4"),
+		srcPath:   path.Join(tempBase, token+".src.mp4"),
+		dstPath:   path.Join(tempBase, token+".dst.mp4"),
+		servePath: serveVideoPath,
+		url:       fmt.Sprintf("%s/%s.mp4", storageUri, token),
+
+		thumbDstPath:   path.Join(tempBase, token+".jpg"),
+		thumbServePath: serveThumbPath,
+		thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
+
+		deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
+
+		owner: user,
+	}
+}
+
 func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, error) {
 
 	var video *videoToTranscode
@@ -269,20 +293,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			continue
 		}
 
-		video = &videoToTranscode{
-			srcPath:   path.Join(tempBase, token+".src.mp4"),
-			dstPath:   path.Join(tempBase, token+".dst.mp4"),
-			servePath: serveVideoPath,
-			url:       fmt.Sprintf("%s/%s.mp4", storageUri, token),
-
-			thumbDstPath:   path.Join(tempBase, token+".jpg"),
-			thumbServePath: serveThumbPath,
-			thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
-
-			deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
-
-			owner: user,
-		}
+		video = createVideoToTranscode(token, serveVideoPath, serveThumbPath, user)
 		break
 	}
 
@@ -293,19 +304,24 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	log.Printf("%s: Created owned file", video.srcPath)
 
 	// Download the resource data
-	srcFile, err := os.Create(video.srcPath)
+	dlFile, err := os.Create(video.dlPath)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
 
-	_, err = io.Copy(srcFile, r.Body)
+	_, err = io.Copy(dlFile, r.Body)
 	if err != nil {
-		srcFile.Close()
+		dlFile.Close()
 		return http.StatusInternalServerError, err
 	}
-	srcFile.Close()
+	dlFile.Close()
 
 	log.Printf("%s: Downloaded video data", video.srcPath)
+
+	err = os.Rename(video.dlPath, video.srcPath)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
 
 	// Process the video
 	didAdd := fastProcessQueue.AddIfSpace(func() {
@@ -383,7 +399,85 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	}
 }
 
+func queuePendingVideosToTranscode() {
+
+	files, err := ioutil.ReadDir(tempBase)
+	if err != nil {
+		log.Printf("Failed to search pending transcode work: %s", err.Error())
+		return
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		p := file.Name()
+		if !strings.HasSuffix(p, ".src.mp4") {
+			continue
+		}
+		log.Printf("Found unprocessed video %s, preparing to transcode", p)
+
+		parts := strings.Split(p, "/")
+		if len(parts) == 0 {
+			log.Printf("%s: Failed to extract token", p)
+			continue
+		}
+
+		token := strings.TrimSuffix(parts[len(parts)-1], ".src.mp4")
+
+		serveVideoPath := path.Join(serveBase, token+".mp4")
+		serveThumbPath := path.Join(serveBase, token+".jpg")
+
+		videoOwner, err := serveCollection.ReadOwner(serveVideoPath)
+		if err != nil {
+			log.Printf("%s: Failed to read video owner", p)
+			continue
+		}
+
+		thumbOwner, err := serveCollection.ReadOwner(serveThumbPath)
+		if err != nil {
+			log.Printf("%s: Failed to read thumbnail owner", p)
+			continue
+		}
+
+		if videoOwner != thumbOwner {
+			log.Printf("%s: Owner mismatch", p)
+			continue
+		}
+
+		video := createVideoToTranscode(token, serveVideoPath, serveThumbPath, videoOwner)
+
+		didAdd := fastProcessQueue.AddIfSpace(func() {
+			processVideoFast(video)
+		})
+
+		if !didAdd {
+			log.Printf("%s: Process queue full: skipped", video.srcPath)
+		} else {
+			log.Printf("%s: Added to process queue", video.srcPath)
+		}
+	}
+}
+
 func main() {
+
+	// Resolve URLs from environment variables
+	//
+	// Common:
+	//   GOTR_TEMP_PATH: Path to download and process videos in
+	//   GOTR_SERVE_PATH: Path to copy transcoded videos _needs_ to be in the same mount as GOTR_TEMP_PATH
+	//                    since the processed videos are renamed to here when done.
+	//   GOTR_STORAGE_URL_PATH: Base path appeneded to GOTR_URI or LAYERS_API_URI that serves files from GOTR_SERVE_PATH
+	//   GOTR_API_URL_PATH: Base path appended to GOTR_UR or LAYERS_API_URI that is used for the API calls
+	//
+	// Layers Box:
+	//   LAYERS_API_URI: URL of the box (should be predefined by Layers Box)
+	//   AUTH_URL_PATH: Path appended to LAYERS_API_URI for the authentication /userinfo endpoint
+	//
+	// Standalone:
+	//   GOTR_URI: URL of this server
+	//   AUTH_URI: URL of the authentication /userinfo endpoint
+
 	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 
 	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
@@ -393,12 +487,34 @@ func main() {
 
 	authUri = strings.TrimSuffix(os.Getenv("AUTH_URI"), "/")
 	if authUri == "" {
-		authPath := strings.Trim(os.Getenv("AUTH_PATH"), "/")
-		if authPath != "" {
-			authUri = layersApiUri + "/" + authPath
-		} else {
-			authUri = layersApiUri + "/o/oauth2/userinfo"
+		if layersApiUri != "" {
+			authPath := strings.Trim(os.Getenv("AUTH_URL_PATH"), "/")
+			if authPath != "" {
+				authUri = layersApiUri + "/" + authPath
+			} else {
+				authUri = layersApiUri + "/o/oauth2/userinfo"
+			}
 		}
+	}
+
+	if appUri == "" {
+		log.Printf("No app URI found, use LAYERS_API_URI or GOTR_URI to specify")
+		os.Exit(11)
+	}
+
+	if authUri == "" {
+		log.Printf("No auth URI found, specify AUTH_URI or AUTH_URL_PATH")
+		os.Exit(11)
+	}
+
+	if os.Getenv("GOTR_STORAGE_URL_PATH") == "" {
+		log.Printf("No storage path found, specify GOTR_STORAGE_URL_PATH use '/' if root")
+		os.Exit(11)
+	}
+
+	if os.Getenv("GOTR_API_URL_PATH") == "" {
+		log.Printf("No API path found, specify GOTR_API_URL_PATH use '/' if root")
+		os.Exit(11)
 	}
 
 	storageUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_STORAGE_URL_PATH"), "/")
@@ -406,10 +522,39 @@ func main() {
 	tempBase = os.Getenv("GOTR_TEMP_PATH")
 	serveBase = os.Getenv("GOTR_SERVE_PATH")
 
+	if tempBase == "" {
+		log.Printf("No temp folder found, specify GOTR_TEMP_PATH")
+		os.Exit(11)
+	}
+
+	if serveBase == "" {
+		log.Printf("No serve folder found, specify GOTR_SERVE_PATH")
+		os.Exit(11)
+	}
+
+	log.Printf("Configuration successful")
+	log.Printf("  %12s: %s", "Auth URI", authUri)
+	log.Printf("  %12s: %s/", "API URI", apiUri)
+	log.Printf("  %12s: %s/", "Serve URI", storageUri)
+	log.Printf("  %12s: %s", "Temp path", tempBase)
+	log.Printf("  %12s: %s", "Serve path", serveBase)
+
+	// If there is pending work to do add it to the work queue
+	log.Printf("Searching for pending work")
+	queuePendingVideosToTranscode()
+
+	// Setup the router and start serving
 	r := mux.NewRouter()
 
 	r.HandleFunc("/uploads", wrappedHandler(authenticatedHandler(uploadHandler))).Methods("POST")
 	r.HandleFunc("/uploads/{token}", wrappedHandler(authenticatedHandler(deleteHandler))).Methods("DELETE")
 
-	http.ListenAndServe(":8080", r)
+	port := ":8080"
+
+	log.Printf("Serving at %s", port)
+	err := http.ListenAndServe(port, r)
+	if err != nil {
+		log.Printf("Failed to start server: %s", err.Error())
+		os.Exit(10)
+	}
 }

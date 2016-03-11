@@ -143,3 +143,9 @@ func (self *Collection) Delete(path string, owner string) error {
 
 	return os.Remove(getOwnerPath(path))
 }
+
+func (self *Collection) ReadOwner(path string) (string, error) {
+	self.lock()
+	defer self.unlock()
+	return unsafeReadOwner(path)
+}
