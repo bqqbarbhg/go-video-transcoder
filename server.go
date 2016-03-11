@@ -32,7 +32,7 @@ var slowProcessQueue = workqueue.New(1)
 var tempBase string
 var serveBase string
 
-var layersApiUri string
+var authUri string
 var storageUri string
 var apiUri string
 
@@ -48,14 +48,14 @@ func logError(err error, context string, action string) {
 
 func authenticate(r *http.Request) (user string, err error) {
 
-	// Request GET /o/auth2/userinfo with the bearer token
+	// Request GET userinfo-endpoint with the bearer token
 	client := &http.Client{}
-	url := layersApiUri + "/o/oauth2/userinfo"
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", authUri, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Add("Authorization", r.Header.Get("Authorization"))
+	req.Header.Add("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -384,11 +384,23 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 }
 
 func main() {
-	layersApiUri = strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
+	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
+
 	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
 	if appUri == "" {
 		appUri = layersApiUri
 	}
+
+	authUri = strings.TrimSuffix(os.Getenv("AUTH_URI"), "/")
+	if authUri == "" {
+		authPath := strings.Trim(os.Getenv("AUTH_PATH"), "/")
+		if authPath != "" {
+			authUri = layersApiUri + "/" + authPath
+		} else {
+			authUri = layersApiUri + "/o/oauth2/userinfo"
+		}
+	}
+
 	storageUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_STORAGE_URL_PATH"), "/")
 	apiUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_API_URL_PATH"), "/")
 	tempBase = os.Getenv("GOTR_TEMP_PATH")
