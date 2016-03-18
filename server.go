@@ -96,7 +96,7 @@ func generateToken() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(buffer), nil
+	return "video-" + base64.URLEncoding.EncodeToString(buffer), nil
 }
 
 type videoToTranscode struct {
