@@ -28,7 +28,7 @@ or
 
 ### Deleting
 
-`DELTE /uploads/$id`
+`DELETE /uploads/$id`
 
 These URLs should not be made by hand as the ID is not a real thing,
 but the URL can be retrieved from the upload JSON response `deleteUrl`
@@ -40,6 +40,13 @@ or
 ```
 
 ## Setting up
+
+#### Dependencies
+
+- [avconv](https://libav.org/avconv.html) for transcoding
+- [exiftool](http://owl.phy.queensu.ca/~phil/exiftool/) for detecting video rotation
+
+#### Environment variables
 
 Govitra itself requires some amount of configuration to run, this is provided as environment variables.
 It also requires a server to serve the actual video files. Note: You forbid the server from serving
@@ -60,7 +67,19 @@ It also requires a server to serve the actual video files. Note: You forbid the 
     - `GOTR_URI`: URL of this server
     - `AUTH_URI`: URL of the authentication /userinfo endpoint
 
-#### Example setup:
+### Example setup:
+
+Dependencies and server:
+```
+# Golang (and git for 'go get')
+apt-get install -y golang git
+
+# Govitra dependencies
+apt-get install -y libav-tools exiftool
+
+# Download and build Govitra
+go get github.com/bqqbarbhg/go-video-transcoder
+```
 
 Govitra environment:
 ```
