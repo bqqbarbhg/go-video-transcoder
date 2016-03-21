@@ -125,7 +125,8 @@ and videos at `https://server.com/govitra-videos/`
 - Clone this repository and `cd` into it
 - Build Govitra: `go build`
 - To run it for testing: `./test.sh`, this points Govitra to the default achrails address `http://10.11.12.13:9292`
-- Go to `10.11.12.13:9292/oidc/authorize?response_type=code&client_id=client&redirect_uri=http://example.com` and authenticate using the Developer authentication - After being redirected to `http://example.com?code=<CODE>` copy the `<CODE>`
+- Go to `10.11.12.13:9292/oidc/authorize?response_type=code&client_id=client&redirect_uri=http://example.com` and authenticate using the Developer authentication
+- After being redirected to `http://example.com?code=<CODE>` copy the `<CODE>`
 - Request `POST http://10.11.12.13:9292/oidc/token` with `code=<CODE>&client_id=client&client_secret=secret&grant_type=authorization_code` and copy the access token
 - Now you can do authenticated requests to `localhost:8080` using the header `Authorization: Bearer <ACCESS-TOKEN>`
 
