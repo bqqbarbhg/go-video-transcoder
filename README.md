@@ -21,7 +21,10 @@ The API is very simple and has only two endpoints, one for uploading and one for
     "deleteUrl": "$self/uploads/$id"
 }
 ```
-or `{ "error": "Human readable error description" }`
+or
+```json
+{ "error": "Human readable error description" }
+```
 
 ### Deleting
 
@@ -31,7 +34,10 @@ These URLs should not be made by hand as the ID is not a real thing,
 but the URL can be retrieved from the upload JSON response `deleteUrl`
 
 Returns `204 No Content`
-or `{ "error": "Human readable error description" }`
+or
+```json
+{ "error": "Human readable error description" }
+```
 
 ## Setting up
 
@@ -41,7 +47,7 @@ It also requires a server to serve the actual video files. Note: You forbid the 
 
 - Common:
     - `GOTR_TEMP_PATH`: Path to download and process videos in
-    - `GOTR_SERVE_PATH`: Path to copy transcoded videos _needs_ to be in the same
+    - `GOTR_SERVE_PATH`: Path to copy transcoded videos. _Needs_ to be in the same
     mount as `GOTR_TEMP_PATH` since the processed videos are renamed to here when done.
     - `GOTR_STORAGE_URL_PATH`: Base path appeneded to `GOTR_URI` or `LAYERS_API_URI`
     that serves files from `GOTR_SERVE_PATH`
@@ -54,7 +60,7 @@ It also requires a server to serve the actual video files. Note: You forbid the 
     - `GOTR_URI`: URL of this server
     - `AUTH_URI`: URL of the authentication /userinfo endpoint
 
-Example setup:
+#### Example setup:
 
 Govitra environment:
 ```
@@ -89,9 +95,13 @@ location /govitra-videos/ {
 }
 ```
 
+Now the API should be hosted at `https://server.com/govitra-api/`
+and videos at `https://server.com/govitra-videos/`
+
 ## Development
 
-Made for [Ach so!](http://achso.aalto.fi) and [Learning Layers](http://learning-layers.eu) in Aalto University
+Made for [Ach so!](http://achso.aalto.fi) and [Learning Layers](http://learning-layers.eu)
+in [Aalto University](http://www.aalto.fi/en/)
 
 - Samuli Raivio (@bqqbarbhg)
 
