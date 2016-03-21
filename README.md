@@ -122,6 +122,8 @@ and videos at `https://server.com/govitra-videos/`
 Made for [Ach so!](http://achso.aalto.fi) and [Learning Layers](http://learning-layers.eu)
 in [Aalto University](http://www.aalto.fi/en/)
 
+#### Authors
+
 - Samuli Raivio (@bqqbarbhg)
 
 ## Licence
