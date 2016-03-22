@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export AUTH_URI=http://10.11.12.13:9292/userinfo
+export AUTH_URI=http://10.11.12.13:9292/oidc/userinfo
 export GOTR_URI=https://govitra.com
 export GOTR_STORAGE_URL_PATH=/uploads/
 export GOTR_API_URL_PATH=/api/
