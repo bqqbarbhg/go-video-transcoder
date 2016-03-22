@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -49,9 +50,7 @@ func logError(err error, context string, action string) {
 func authenticate(r *http.Request) (user string, err error) {
 
 	authorization := r.Header.Get("Authorization")
-	if authorization == "" {
-		return "", errors.New("No Authorization header provided")
-	}
+	upload_token := r.URL.Query().Get("upload_token")
 
 	// Request GET userinfo-endpoint with the bearer token
 	client := &http.Client{}
@@ -59,8 +58,14 @@ func authenticate(r *http.Request) (user string, err error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Add("Authorization", authorization)
 	req.Header.Add("Accept", "application/json")
+	if authorization != "" {
+		req.Header.Add("Authorization", authorization)
+	}
+	if upload_token != "" {
+		req.Header.Add("X-Upload-Token", upload_token)
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -308,13 +313,59 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
+	defer dlFile.Close()
 
-	_, err = io.Copy(dlFile, r.Body)
-	if err != nil {
-		dlFile.Close()
-		return http.StatusInternalServerError, err
+	title := ""
+
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/") {
+		log.Printf("%s: Found multipart data", video.srcPath)
+		reader, err := r.MultipartReader()
+		if err != nil {
+			return http.StatusBadRequest, err
+		}
+
+		didDownload := false
+
+		for {
+			part, err := reader.NextPart()
+			if err == io.EOF {
+				break
+			}
+
+			if err != nil {
+				return http.StatusBadRequest, err
+			}
+
+			if part.FormName() == "video" {
+				log.Printf("%s: Downloading %s=%s (%s)", video.srcPath, part.FormName(), part.FileName(),
+					part.Header.Get("Content-Type"))
+
+				title = part.FileName()
+
+				_, err = io.Copy(dlFile, part)
+				if err != nil {
+					return http.StatusInternalServerError, err
+				}
+
+				didDownload = true
+			}
+
+			part.Close()
+		}
+
+		if !didDownload {
+			return http.StatusInternalServerError, errors.New("'video' not found in multipart data")
+		}
+
+	} else {
+		log.Printf("%s: Downloading raw body data: %s", video.srcPath, contentType)
+
+		_, err = io.Copy(dlFile, r.Body)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
 	}
-	dlFile.Close()
 
 	log.Printf("%s: Downloaded video data", video.srcPath)
 
@@ -344,20 +395,43 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 		return http.StatusServiceUnavailable, errors.New("Process queue full")
 	}
 
-	ret := struct {
-		Video     string `json:"video"`
-		Thumbnail string `json:"thumbnail"`
-		DeleteUrl string `json:"deleteUrl"`
-	}{
-		video.url,
-		video.thumbUrl,
-		video.deleteUrl,
+	redirect := r.URL.Query().Get("redirect_to")
+
+	if redirect != "" {
+		redirectUrl, err := url.Parse(redirect)
+		if err != nil {
+			return http.StatusBadRequest, err
+		}
+
+		values := redirectUrl.Query()
+		values.Add("video_url", video.url)
+		values.Add("thumb_url", video.thumbUrl)
+		values.Add("delete_url", video.deleteUrl)
+		if title != "" {
+			values.Add("title", title)
+		}
+		redirectUrl.RawQuery = values.Encode()
+
+		http.Redirect(w, r, redirectUrl.String(), http.StatusFound)
+
+		return http.StatusFound, nil
+	} else {
+		ret := struct {
+			Video     string `json:"video"`
+			Thumbnail string `json:"thumbnail"`
+			DeleteUrl string `json:"deleteUrl"`
+		}{
+			video.url,
+			video.thumbUrl,
+			video.deleteUrl,
+		}
+		err = json.NewEncoder(w).Encode(ret)
+		if err != nil {
+			log.Printf("Failed to send response: %s", err.Error())
+		}
+
+		return http.StatusOK, nil
 	}
-	err = json.NewEncoder(w).Encode(ret)
-	if err != nil {
-		log.Printf("Failed to send response: %s", err.Error())
-	}
-	return http.StatusOK, nil
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, error) {
