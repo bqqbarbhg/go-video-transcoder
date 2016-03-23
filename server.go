@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -27,8 +28,8 @@ import _ "crypto/sha512"
 
 var serveCollection *ownedfile.Collection = ownedfile.NewCollection()
 
-var fastProcessQueue = workqueue.New(4)
-var slowProcessQueue = workqueue.New(1)
+var fastProcessQueue *workqueue.WorkQueue
+var slowProcessQueue *workqueue.WorkQueue
 
 var tempBase string
 var serveBase string
@@ -563,6 +564,10 @@ func main() {
 	// Standalone:
 	//   GOTR_URI: URL of this server
 	//   AUTH_URI: URL of the authentication /userinfo endpoint
+	//
+	// Optional:
+	//   GOTR_FAST_TRANSCODE_THREADS: Number of workers that do fast low latency work (default 4)
+	//   GOTR_SLOW_TRANSCODE_THREADS: Number of workerst that do slow, but higher quality work (default 1)
 
 	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 
@@ -603,10 +608,33 @@ func main() {
 		os.Exit(11)
 	}
 
+	numFastTranscodeThreads := 4
+	numSlowTranscodeThreads := 1
+
+	if os.Getenv("GOTR_FAST_TRANSCODE_THREADS") != "" {
+		var err error
+		numFastTranscodeThreads, err = strconv.Atoi(os.Getenv("GOTR_FAST_TRANSCODE_THREADS"))
+		if err != nil {
+			log.Printf("Expected a number for GOTR_FAST_TRANSCODE_THREADS")
+			os.Exit(11)
+		}
+	}
+	if os.Getenv("GOTR_SLOW_TRANSCODE_THREADS") != "" {
+		var err error
+		numSlowTranscodeThreads, err = strconv.Atoi(os.Getenv("GOTR_SLOW_TRANSCODE_THREADS"))
+		if err != nil {
+			log.Printf("Expected a number for GOTR_SLOW_TRANSCODE_THREADS")
+			os.Exit(11)
+		}
+	}
+
 	storageUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_STORAGE_URL_PATH"), "/")
 	apiUri = strings.TrimSuffix(appUri+os.Getenv("GOTR_API_URL_PATH"), "/")
 	tempBase = os.Getenv("GOTR_TEMP_PATH")
 	serveBase = os.Getenv("GOTR_SERVE_PATH")
+
+	fastProcessQueue = workqueue.New(numFastTranscodeThreads)
+	slowProcessQueue = workqueue.New(numSlowTranscodeThreads)
 
 	if tempBase == "" {
 		log.Printf("No temp folder found, specify GOTR_TEMP_PATH")
@@ -624,6 +652,7 @@ func main() {
 	log.Printf("  %12s: %s/", "Serve URI", storageUri)
 	log.Printf("  %12s: %s", "Temp path", tempBase)
 	log.Printf("  %12s: %s", "Serve path", serveBase)
+	log.Printf("  %12s: %d fast, %d slow", "Threads", numFastTranscodeThreads, numSlowTranscodeThreads)
 
 	// If there is pending work to do add it to the work queue
 	log.Printf("Searching for pending work")
