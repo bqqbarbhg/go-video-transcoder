@@ -207,11 +207,21 @@ func processVideoSlow(video *videoToTranscode) {
 	logError(err, video.srcPath, "Delete source file")
 }
 
+func optionsHandler(methods ...string) func(http.ResponseWriter, *http.Request) (int, error) {
+	return func(w http.ResponseWriter, r *http.Request) (int, error) {
+		w.Header().Set("Access-Control-Allow-Methods", strings.Join(methods, ", "))
+		w.WriteHeader(http.StatusOK)
+		return http.StatusOK, nil
+	}
+}
+
 func wrappedHandler(inner func(http.ResponseWriter, *http.Request) (int, error)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		reqID := atomic.AddInt32(&requestID, 1)
 		log.Printf("request-%d: %s %s", reqID, r.Method, r.URL.Path)
+
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		// Delegate to the inner handler
 		status, err := inner(w, r)
@@ -420,10 +430,12 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			Video     string `json:"video"`
 			Thumbnail string `json:"thumbnail"`
 			DeleteUrl string `json:"deleteUrl"`
+			Title     string `json:"title,omitempty"`
 		}{
 			video.url,
 			video.thumbUrl,
 			video.deleteUrl,
+			title,
 		}
 		err = json.NewEncoder(w).Encode(ret)
 		if err != nil {
@@ -622,6 +634,9 @@ func main() {
 
 	r.HandleFunc("/uploads", wrappedHandler(authenticatedHandler(uploadHandler))).Methods("POST")
 	r.HandleFunc("/uploads/{token}", wrappedHandler(authenticatedHandler(deleteHandler))).Methods("DELETE")
+
+	r.HandleFunc("/uploads", wrappedHandler(optionsHandler("POST"))).Methods("OPTIONS")
+	r.HandleFunc("/uploads/{token}", wrappedHandler(optionsHandler("DELETE"))).Methods("DELETE")
 
 	port := ":8080"
 
