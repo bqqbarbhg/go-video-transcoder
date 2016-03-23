@@ -65,7 +65,7 @@ It also requires a server to serve the actual video files. Note: You forbid the 
     - `AUTH_URL_PATH`: Path appended to `LAYERS_API_URI` for the authentication `/userinfo` endpoint
 - Standalone:
     - `GOTR_URI`: URL of this server
-    - `AUTH_URI`: URL of the authentication /userinfo endpoint
+    - `AUTH_URI`: URL of the authentication [OIDC `/userinfo` endpoint](http://openid.net/specs/openid-connect-core-1_0.html#UserInfo)
 
 ### Example setup:
 
