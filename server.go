@@ -17,9 +17,9 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/bqqbarbhg/go-video-transcoder/ownedfile"
-	"github.com/bqqbarbhg/go-video-transcoder/transcode"
-	"github.com/bqqbarbhg/go-video-transcoder/workqueue"
+	"./ownedfile"
+	"./transcode"
+	"./workqueue"
 
 	"github.com/gorilla/mux"
 )
