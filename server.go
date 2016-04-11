@@ -24,21 +24,42 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// This is needed to be able to validate some HTTPS signatures
 import _ "crypto/sha512"
 
+// Immutable global variables
+// --------------------------
+
+// A collection of owned files that contains the current files to be served
 var serveCollection *ownedfile.Collection = ownedfile.NewCollection()
 
+// Work queues for transcoding, fast has more threads and transcodes into lower
+// quality, slow has fewer threads and only does high quality final transcodes.
+// Every video is passed first into the fast queue and when it has finished it's
+// inserted into the slow queue.
 var fastProcessQueue *workqueue.WorkQueue
 var slowProcessQueue *workqueue.WorkQueue
 
+// Base paths for directories for temporary files and served files
+// A separate HTTP server should serve files from `serveBase`
 var tempBase string
 var serveBase string
 
+// URI for the authentication endpoint
 var authUri string
+
+// Base URIs to return from the requests to the user
 var storageUri string
 var apiUri string
 
+// Mutable global variables
+// ------------------------
+
+// Current requestID counter, used from many threads, use atomics!
 var requestID int32
+
+// Utility functions
+// -----------------
 
 func logError(err error, context string, action string) {
 	if err != nil {
@@ -48,6 +69,9 @@ func logError(err error, context string, action string) {
 	}
 }
 
+// Check the authentication from a request and return the user ID, supports:
+// - OIDC `Authentication: Bearer` header
+// - achrails `upload_token` query parameter for form uploads
 func authenticate(r *http.Request) (user string, err error) {
 
 	authorization := r.Header.Get("Authorization")
@@ -94,6 +118,7 @@ func authenticate(r *http.Request) (user string, err error) {
 	return strid, nil
 }
 
+// Generate an unique token for a video
 func generateToken() (string, error) {
 	length := 18
 
@@ -105,24 +130,51 @@ func generateToken() (string, error) {
 	return "video-" + base64.URLEncoding.EncodeToString(buffer), nil
 }
 
+// Video that is currently being transcoded
 type videoToTranscode struct {
-	dlPath    string
-	srcPath   string
-	dstPath   string
-	servePath string
-	url       string
 
+	// Local paths to temporary and to-be-served files
+	dlPath         string
+	srcPath        string
+	dstPath        string
+	servePath      string
 	thumbDstPath   string
 	thumbServePath string
-	thumbUrl       string
 
+	// URLs returned to the user
+	url       string
+	thumbUrl  string
 	deleteUrl string
 
+	// User ID of the owner of this file
 	owner string
 
+	// Rotation in degrees, filled in the fast processing phase
 	rotation int
 }
 
+// Create a new `videoToTranscode` struct
+func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, user string) *videoToTranscode {
+	return &videoToTranscode{
+		dlPath:    path.Join(tempBase, token+".dl.mp4"),
+		srcPath:   path.Join(tempBase, token+".src.mp4"),
+		dstPath:   path.Join(tempBase, token+".dst.mp4"),
+		servePath: serveVideoPath,
+		url:       fmt.Sprintf("%s/%s.mp4", storageUri, token),
+
+		thumbDstPath:   path.Join(tempBase, token+".jpg"),
+		thumbServePath: serveThumbPath,
+		thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
+
+		deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
+
+		owner: user,
+	}
+}
+
+// Just a wrapper for the `transcode` package:
+// - Generates the thumbnail from a relative time
+// - Moves the thumbnail to the destination when completed
 func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 
 	// Extract the duration
@@ -152,6 +204,8 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	return nil
 }
 
+// Just a wrapper for the `transcode` package:
+// - Moves the video to the destination when completed
 func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 
 	// Do the transcoding itself
@@ -174,6 +228,13 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	return nil
 }
 
+// Background worker proceses
+// --------------------------
+
+// First pass of transcoding:
+// - Extract rotation
+// - Generate thumbnail
+// - Transcode a low quality version
 func processVideoFast(video *videoToTranscode) {
 
 	// Extract the rotation from the metadata
@@ -197,6 +258,9 @@ func processVideoFast(video *videoToTranscode) {
 	})
 }
 
+// Second pass of transcoding:
+// - Transcode a high quality version
+// - Delete the temporary files
 func processVideoSlow(video *videoToTranscode) {
 
 	// Transcode a better quality version of the video
@@ -208,14 +272,12 @@ func processVideoSlow(video *videoToTranscode) {
 	logError(err, video.srcPath, "Delete source file")
 }
 
-func optionsHandler(methods ...string) func(http.ResponseWriter, *http.Request) (int, error) {
-	return func(w http.ResponseWriter, r *http.Request) (int, error) {
-		w.Header().Set("Access-Control-Allow-Methods", strings.Join(methods, ", "))
-		w.WriteHeader(http.StatusOK)
-		return http.StatusOK, nil
-	}
-}
+// HTTP handlers
+// -------------
 
+// Wraps a handler function and adds support for:
+// - Logging requests
+// - Allow returning `error` type from handler
 func wrappedHandler(inner func(http.ResponseWriter, *http.Request) (int, error)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -247,6 +309,9 @@ func wrappedHandler(inner func(http.ResponseWriter, *http.Request) (int, error))
 	}
 }
 
+// Wraps a handler function and adds support for:
+// - Authentication, passes the user ID to the wrapped func
+// - Never calls the inner handler if authentication failed
 func authenticatedHandler(inner func(http.ResponseWriter, *http.Request, string) (int, error)) func(http.ResponseWriter, *http.Request) (int, error) {
 	return func(w http.ResponseWriter, r *http.Request) (int, error) {
 
@@ -261,24 +326,21 @@ func authenticatedHandler(inner func(http.ResponseWriter, *http.Request, string)
 	}
 }
 
-func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, user string) *videoToTranscode {
-	return &videoToTranscode{
-		dlPath:    path.Join(tempBase, token+".dl.mp4"),
-		srcPath:   path.Join(tempBase, token+".src.mp4"),
-		dstPath:   path.Join(tempBase, token+".dst.mp4"),
-		servePath: serveVideoPath,
-		url:       fmt.Sprintf("%s/%s.mp4", storageUri, token),
-
-		thumbDstPath:   path.Join(tempBase, token+".jpg"),
-		thumbServePath: serveThumbPath,
-		thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
-
-		deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
-
-		owner: user,
+// > OPTIONS /uploads
+// > OPTIONS /uploads/:token
+// Just returns CORS header for specified methods
+func optionsHandler(methods ...string) func(http.ResponseWriter, *http.Request) (int, error) {
+	return func(w http.ResponseWriter, r *http.Request) (int, error) {
+		w.Header().Set("Access-Control-Allow-Methods", strings.Join(methods, ", "))
+		w.WriteHeader(http.StatusOK)
+		return http.StatusOK, nil
 	}
 }
 
+// > POST /uploads
+// Uploads a new video to be transcoded and returns the URLs where the video
+// will be hosted.
+// Supports both raw data body and multipart form files.
 func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, error) {
 
 	var video *videoToTranscode
@@ -319,7 +381,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 	log.Printf("%s: Created owned file", video.srcPath)
 
-	// Download the resource data
+	// Create a temporary file for the download
 	dlFile, err := os.Create(video.dlPath)
 	if err != nil {
 		return http.StatusInternalServerError, err
@@ -330,6 +392,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/") {
+		// Content-Type has multipart -> extract multipart file "video"
+
 		log.Printf("%s: Found multipart data", video.srcPath)
 		reader, err := r.MultipartReader()
 		if err != nil {
@@ -338,8 +402,12 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 		didDownload := false
 
+		// Iterate through the multipart parts. This has to be done this way so
+		// the request can be streamed instead of held completely in memory
 		for {
 			part, err := reader.NextPart()
+
+			// Found EOF, break
 			if err == io.EOF {
 				break
 			}
@@ -348,6 +416,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 				return http.StatusBadRequest, err
 			}
 
+			// If the part is named "video" download the data
 			if part.FormName() == "video" {
 				log.Printf("%s: Downloading %s=%s (%s)", video.srcPath, part.FormName(), part.FileName(),
 					part.Header.Get("Content-Type"))
@@ -370,6 +439,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 		}
 
 	} else {
+		// Content-Type is not multipart, download the raw body data
+
 		log.Printf("%s: Downloading raw body data: %s", video.srcPath, contentType)
 
 		_, err = io.Copy(dlFile, r.Body)
@@ -406,8 +477,10 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 		return http.StatusServiceUnavailable, errors.New("Process queue full")
 	}
 
+	// The video is uploaded and currently queued for transcoding, return either
+	// a JSON object describing it, or alternatively redirect the user to
+	// the URL specified in the query parameters
 	redirect := r.URL.Query().Get("redirect_to")
-
 	if redirect != "" {
 		redirectUrl, err := url.Parse(redirect)
 		if err != nil {
@@ -447,9 +520,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	}
 }
 
+// > DELETE /uploads/:token
+// Deletes the video if the user owns it
 func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, error) {
 
-	// Ignore the body
+	// Ignore the body (read to /dev/null)
 	_, err := io.Copy(ioutil.Discard, r.Body)
 	if err != nil {
 		return http.StatusBadRequest, err
@@ -486,6 +561,10 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	}
 }
 
+// Scans the temporary directories for files, if found add them to the
+// transcoding queues.
+// This is done so if the server crashes or is shut down during
+// transcoding it will continue from where it was left off when restarted.
 func queuePendingVideosToTranscode() {
 
 	files, err := ioutil.ReadDir(tempBase)
