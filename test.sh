@@ -11,6 +11,7 @@ export GOTR_SLOW_TRANSCODE_THREADS=2
 
 # AWS-specific environment variables
 export USE_AWS=0
+export AWS_BUCKET_NAME=aalt-achso
 export AWS_ACCESS_KEY_ID=id
 export AWS_SECRET_ACCESS_KEY=key
 
