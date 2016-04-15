@@ -97,6 +97,16 @@ func uploadToAWS(fileName string, key string) (putOutput *s3.PutObjectOutput, er
 	return uploadResult, err
 }
 
+func deleteFromAWS(key string) (output *s3.DeleteObjectOutput, err error) {
+
+	deleteResult, err := s3Client.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+
+	return deleteResult, err
+}
+
 func logError(err error, context string, action string) {
 	if err != nil {
 		log.Printf("%s: %s failed: %s", context, action, err.Error())
@@ -600,30 +610,35 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	token := vars["token"]
 
 	// Delete the owned files
-	serveVideoPath := path.Join(serveBase, token+".mp4")
-	serveThumbPath := path.Join(serveBase, token+".jpg")
 
-	videoErr := serveCollection.Delete(serveVideoPath, user)
-	thumbErr := serveCollection.Delete(serveThumbPath, user)
-
-	logError(videoErr, serveVideoPath, "Delete file")
-	logError(thumbErr, serveThumbPath, "Delete file")
-
-	if videoErr == nil && thumbErr == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return http.StatusNoContent, nil
-	}
-
-	if ownedfile.IsPermissionDenied(videoErr) {
-		return http.StatusForbidden, videoErr
-	} else if ownedfile.IsPermissionDenied(thumbErr) {
-		return http.StatusForbidden, thumbErr
-	} else if videoErr != nil {
-		return http.StatusInternalServerError, videoErr
-	} else if thumbErr != nil {
-		return http.StatusInternalServerError, thumbErr
+	if useAWS == "1" {
+		return http.StatusInternalServerError, errors.New("asasdasd")
 	} else {
-		return http.StatusInternalServerError, errors.New("Forbidden code path")
+		serveVideoPath := path.Join(serveBase, token+".mp4")
+		serveThumbPath := path.Join(serveBase, token+".jpg")
+
+		videoErr := serveCollection.Delete(serveVideoPath, user)
+		thumbErr := serveCollection.Delete(serveThumbPath, user)
+
+		logError(videoErr, serveVideoPath, "Delete file")
+		logError(thumbErr, serveThumbPath, "Delete file")
+
+		if videoErr == nil && thumbErr == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return http.StatusNoContent, nil
+		}
+
+		if ownedfile.IsPermissionDenied(videoErr) {
+			return http.StatusForbidden, videoErr
+		} else if ownedfile.IsPermissionDenied(thumbErr) {
+			return http.StatusForbidden, thumbErr
+		} else if videoErr != nil {
+			return http.StatusInternalServerError, videoErr
+		} else if thumbErr != nil {
+			return http.StatusInternalServerError, thumbErr
+		} else {
+			return http.StatusInternalServerError, errors.New("Forbidden code path")
+		}
 	}
 }
 
