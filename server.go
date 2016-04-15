@@ -78,11 +78,11 @@ func getS3URL(fileName string) string {
 }
 
 func getThumbURL(fileName string) string {
-	return getS3URL("thumbs/ " + fileName)
+	return getS3URL("thumbs/" + fileName)
 }
 
 func getVideoURL(fileName string) string {
-	return getS3URL("videos/ " + fileName)
+	return getS3URL("videos/" + fileName)
 }
 
 func uploadToAWS(fileName string, key string) (putOutput *s3.PutObjectOutput, err error) {
@@ -176,6 +176,7 @@ type videoToTranscode struct {
 	servePath      string
 	thumbDstPath   string
 	thumbServePath string
+	token          string
 
 	// URLs returned to the user
 	url       string
@@ -191,16 +192,28 @@ type videoToTranscode struct {
 
 // Create a new `videoToTranscode` struct
 func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, user string) *videoToTranscode {
+	var thumbUrl string
+	var videoUrl string
+
+	if useAWS == "1" {
+		thumbUrl = getThumbURL(token + ".jpg")
+		videoUrl = getVideoURL(token + ".mp4")
+	} else {
+		thumbUrl = fmt.Sprintf("%s/%s.jpg", storageUri, token)
+		videoUrl = fmt.Sprintf("%s/%s.mp4", storageUri, token)
+	}
+
 	return &videoToTranscode{
 		dlPath:    path.Join(tempBase, token+".dl.mp4"),
 		srcPath:   path.Join(tempBase, token+".src.mp4"),
 		dstPath:   path.Join(tempBase, token+".dst.mp4"),
 		servePath: serveVideoPath,
-		url:       fmt.Sprintf("%s/%s.mp4", storageUri, token),
+		url:       videoUrl,
+		token:     token,
 
 		thumbDstPath:   path.Join(tempBase, token+".jpg"),
 		thumbServePath: serveThumbPath,
-		thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
+		thumbUrl:       thumbUrl,
 
 		deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
 
@@ -231,10 +244,14 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	}
 
 	// Move the generated thumbnail to the serve path
-	err = serveCollection.Move(video.thumbDstPath, video.thumbServePath, video.owner)
-	if err != nil {
-		_ = os.Remove(video.thumbDstPath)
-		return err
+	if useAWS == "1" {
+		uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg")
+	} else {
+		err = serveCollection.Move(video.thumbDstPath, video.thumbServePath, video.owner)
+		if err != nil {
+			_ = os.Remove(video.thumbDstPath)
+			return err
+		}
 	}
 
 	return nil
@@ -255,10 +272,18 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	}
 
 	// Move the transcoded video to the serving path
-	err = serveCollection.Move(video.dstPath, video.servePath, video.owner)
-	if err != nil {
-		_ = os.Remove(video.dstPath)
-		return err
+	if useAWS == "1" {
+		err, res := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4")
+
+		log.Println(err)
+		log.Println(res)
+	} else {
+
+		err = serveCollection.Move(video.dstPath, video.servePath, video.owner)
+		if err != nil {
+			_ = os.Remove(video.dstPath)
+			return err
+		}
 	}
 
 	return nil
@@ -388,23 +413,28 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			return http.StatusInternalServerError, err
 		}
 
-		serveVideoPath := path.Join(serveBase, token+".mp4")
-		serveThumbPath := path.Join(serveBase, token+".jpg")
+		var serveVideoPath string
+		var serveThumbPath string
 
-		// Reserve the owner for the destination files
-		err = serveCollection.Create(serveVideoPath, user)
-		if err != nil {
-			log.Printf("Failed to create video: %s", err)
-			continue
-		}
-		err = serveCollection.Create(serveThumbPath, user)
-		if err != nil {
-			log.Printf("Failed to create thumbnail: %s", err)
-			err := serveCollection.Delete(serveVideoPath, user)
+		if useAWS != "1" {
+			serveVideoPath = path.Join(serveBase, token+".mp4")
+			serveThumbPath = path.Join(serveBase, token+".jpg")
+
+			// Reserve the owner for the destination files
+			err = serveCollection.Create(serveVideoPath, user)
 			if err != nil {
-				log.Printf("Failed to remove video: %s", err)
+				log.Printf("Failed to create video: %s", err)
+				continue
 			}
-			continue
+			err = serveCollection.Create(serveThumbPath, user)
+			if err != nil {
+				log.Printf("Failed to create thumbnail: %s", err)
+				err := serveCollection.Delete(serveVideoPath, user)
+				if err != nil {
+					log.Printf("Failed to remove video: %s", err)
+				}
+				continue
+			}
 		}
 
 		video = createVideoToTranscode(token, serveVideoPath, serveThumbPath, user)
