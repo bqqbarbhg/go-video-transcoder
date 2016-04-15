@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -71,6 +72,30 @@ var requestID int32
 
 // Utility functions
 // -----------------
+
+func getS3URL(fileName string) string {
+	return "https://" + bucketName + ".s3." + bucketRegion + ".amazonaws.com/" + fileName
+}
+
+func getThumbURL(fileName string) string {
+	return getS3URL("thumbs/ " + fileName)
+}
+
+func getVideoURL(fileName string) string {
+	return getS3URL("videos/ " + fileName)
+}
+
+func uploadToAWS(fileName string, key string) (putOutput *s3.PutObjectOutput, err error) {
+	fileBytes, err := ioutil.ReadFile(fileName)
+
+	uploadResult, err := s3Client.PutObject(&s3.PutObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+		Body:   bytes.NewReader(fileBytes),
+	})
+
+	return uploadResult, err
+}
 
 func logError(err error, context string, action string) {
 	if err != nil {
@@ -661,11 +686,11 @@ func main() {
 
 	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 
-	useAWS := os.Getenv("USE_AWS")
+	useAWS = os.Getenv("USE_AWS")
 
-	bucketName := os.Getenv("AWS_BUCKET_NAME")
+	bucketName = os.Getenv("AWS_BUCKET_NAME")
 
-	bucketRegion := os.Getenv("AWS_BUCKET_REGION")
+	bucketRegion = os.Getenv("AWS_BUCKET_REGION")
 
 	if bucketName == "" && useAWS == "1" {
 		log.Printf("Bucket name is required if using AWS!")
@@ -680,16 +705,22 @@ func main() {
 	if useAWS == "1" {
 		s3Client = s3.New(session.New(&aws.Config{Region: aws.String(bucketRegion)}))
 
-		_, err := s3Client.CreateBucket(&s3.CreateBucketInput{
-			Bucket: &bucketName,
-		})
-
-		err = s3Client.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
+		err := s3Client.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
 
 		if err != nil {
 			log.Printf("Failed to wait for bucket to exist %s, %s", bucket, err)
 			os.Exit(11)
 		}
+
+		//	key := "thumbs/test.txt"
+
+		//	var results *s3.PutObjectOutput
+
+		//	results, err = s3Client.PutObject(&s3.PutObjectInput{
+		//		Body:   strings.NewReader("asdasasd"),
+		//		Bucket: &bucketName,
+		//		Key:    &key,
+		//	})
 	}
 
 	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
