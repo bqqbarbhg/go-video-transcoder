@@ -298,10 +298,12 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	if useAWS == "1" {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		err, res := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", metaMap)
+		// TODO: Think this through better
+		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", metaMap)
+		if err != nil {
+			return err
+		}
 
-		log.Println(err)
-		log.Println(res)
 	} else {
 
 		err = serveCollection.Move(video.dstPath, video.servePath, video.owner)
