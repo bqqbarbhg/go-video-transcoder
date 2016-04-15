@@ -11,6 +11,9 @@ import (
 // Regex that matches `exiftool` output format
 var reRotation = regexp.MustCompile("Rotation\\s*:\\s*(\\d+)")
 
+// Regex that avprobe's duration output
+var reDuration = regexp.MustCompile("\\d+(\\.\\d+)?")
+
 // Extracts the rotation from the metadata of the video at `videoPath`
 func ExtractRotation(videoPath string) (int, error) {
 
@@ -47,7 +50,7 @@ func ExtractDuration(videoPath string) (float64, error) {
 
 	// Parse the duration from the outupt
 	var duration float64
-	num, err := fmt.Sscanf(string(durationOutput), "%f", &duration)
+	num, err := fmt.Sscanf(reDuration.FindStringSubmatch(string(durationOutput))[1], "%f", &duration)
 	if err != nil {
 		return 0.0, err
 	} else if num != 1 {
@@ -181,6 +184,5 @@ func GenerateThumbnail(src string, dst string, time float64, options *Options) e
 	// Call `avconv` to do the transcoding
 	transcodeCmd := exec.Command("avconv", args...)
 	err := transcodeCmd.Run()
-
 	return err
 }
