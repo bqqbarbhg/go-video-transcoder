@@ -21,6 +21,9 @@ import (
 	"./transcode"
 	"./workqueue"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/mux"
 )
 
@@ -51,6 +54,11 @@ var authUri string
 // Base URIs to return from the requests to the user
 var storageUri string
 var apiUri string
+
+// AWS-related things
+var useAWS string
+var svc *s3.S3
+var bucket s3.Bucket
 
 // Mutable global variables
 // ------------------------
@@ -650,6 +658,30 @@ func main() {
 
 	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 
+	useAWS := os.Getenv("USE_AWS")
+
+	bucketName := os.Getenv("AWS_BUCKET_NAME")
+
+	if bucketName == "" && useAWS == "1" {
+		log.Printf("Bucket name is required if using AWS!")
+		os.Exit(11)
+	}
+
+	if useAWS == "1" {
+		svc = s3.New(session.New(&aws.Config{Region: aws.String("us-west-2")}))
+
+		_, err := svc.CreateBucket(&s3.CreateBucketInput{
+			Bucket: &bucketName,
+		})
+
+		err = svc.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
+
+		if err != nil {
+			log.Printf("Failed to wait for bucket to exist %s, %s", bucket, err)
+			os.Exit(11)
+		}
+	}
+
 	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
 	if appUri == "" {
 		appUri = layersApiUri
@@ -726,6 +758,8 @@ func main() {
 	}
 
 	log.Printf("Configuration successful")
+	log.Printf("  %12s: %s", "Use AWS", useAWS)
+	log.Printf("  %12s: %s", "AWS bucket name", bucketName)
 	log.Printf("  %12s: %s", "Auth URI", authUri)
 	log.Printf("  %12s: %s/", "API URI", apiUri)
 	log.Printf("  %12s: %s/", "Serve URI", storageUri)
