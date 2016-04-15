@@ -98,6 +98,16 @@ func uploadToAWS(fileName string, key string, metaData map[string]*string) (putO
 	return uploadResult, err
 }
 
+func getMetaFromAWS(key string) (output *s3.HeadObjectOutput, err error) {
+
+	headResult, err := s3Client.HeadObject(&s3.HeadObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+
+	return headResult, err
+}
+
 func deleteFromAWS(key string) (output *s3.DeleteObjectOutput, err error) {
 
 	deleteResult, err := s3Client.DeleteObject(&s3.DeleteObjectInput{
@@ -617,7 +627,29 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	// Delete the owned files
 
 	if useAWS == "1" {
-		return http.StatusInternalServerError, errors.New("asasdasd")
+		videoHead, err := getMetaFromAWS("videos/" + token + ".mp4")
+
+		if err != nil {
+			return http.StatusForbidden, err
+		}
+
+		if *videoHead.Metadata["Owner"] == token {
+			_, videoErr := deleteFromAWS("videos/" + token + ".mp4")
+			_, thumbErr := deleteFromAWS("thumbs/" + token + ".jpg")
+
+			if videoErr == nil && thumbErr == nil {
+				w.WriteHeader(http.StatusNoContent)
+				return http.StatusNoContent, nil
+			} else if videoErr != nil {
+				return http.StatusInternalServerError, videoErr
+			} else if thumbErr != nil {
+				return http.StatusInternalServerError, thumbErr
+			}
+
+		} else {
+			return http.StatusForbidden, errors.New("Forbidden")
+		}
+
 	} else {
 		serveVideoPath := path.Join(serveBase, token+".mp4")
 		serveThumbPath := path.Join(serveBase, token+".jpg")
@@ -645,6 +677,8 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			return http.StatusInternalServerError, errors.New("Forbidden code path")
 		}
 	}
+
+	return http.StatusInternalServerError, errors.New("Forbidden code path")
 }
 
 // Scans the temporary directories for files, if found add them to the
