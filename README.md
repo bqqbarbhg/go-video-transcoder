@@ -71,6 +71,8 @@ It also requires a server to serve the actual video files. Note: You forbid the 
 
 Dependencies and server:
 ```
+apt-get update
+
 # Golang (and git for 'go get')
 apt-get install -y golang git
 
