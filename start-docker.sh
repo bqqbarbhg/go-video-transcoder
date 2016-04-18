@@ -2,4 +2,5 @@
 
 cd /govitra
 go build
-/govitra/govitra
+/govitra/govitra &
+exit 0
