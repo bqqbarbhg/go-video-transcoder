@@ -897,7 +897,7 @@ func main() {
 	}
 
 	log.Printf("Configuration successful")
-	log.Printf("  %12s: %s", "Use AWS", useAWS)
+	log.Printf("  %12s: %t", "Use AWS", useAWS)
 	log.Printf("  %12s: %s", "AWS bucket name", bucketName)
 	log.Printf("  %12s: %s", "AWS bucket region", bucketRegion)
 	log.Printf("  %12s: %s", "Auth URI", authUri)
