@@ -11,8 +11,8 @@ RUN mkdir /go
 ENV GOPATH=/go
 ADD . /govitra
 
-RUN go get github.com/gorilla/mux
-RUN go get github.com/aws/aws-sdk-go/...
+WORKDIR /govitra
+RUN go get -d ./...
 
 RUN mkdir -p /govitra/bin/temp
 RUN mkdir -p /govitra/bin/serve
