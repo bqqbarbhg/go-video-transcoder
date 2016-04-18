@@ -67,6 +67,19 @@ It also requires a server to serve the actual video files. Note: You forbid the 
     - `GOTR_URI`: URL of this server
     - `AUTH_URI`: URL of the authentication [OIDC `/userinfo` endpoint](http://openid.net/specs/openid-connect-core-1_0.html#UserInfo)
 
+#### Usage with AWS S3
+
+If instead of serving videos and thumbnails locally you'd prefer to use AWS S3, simply set the following environment variables
+
+```
+    USE_AWS=1
+    AWS_BUCKET_NAME=<YOUR S3 BUCKET NAME HERE>
+    AWS_BUCKET_REGION=<YOUR S3 REGION HERE>
+    AWS_ACCESS_KEY_ID=<YOUR AWS ACCESS KEY HERE>
+    AWS_SECRET_ACCESS_KEY=<YOUR AWS SECRET KEY HERE>
+
+```
+
 ### Example setup:
 
 Dependencies and server:

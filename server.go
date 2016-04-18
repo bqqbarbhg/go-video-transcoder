@@ -21,6 +21,10 @@ import (
 	"./transcode"
 	"./workqueue"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/gorilla/mux"
 )
 
@@ -52,11 +56,73 @@ var authUri string
 var storageUri string
 var apiUri string
 
+// AWS-related things
+var useAWS bool
+var bucketName string
+var bucketRegion string
+
+var s3Client *s3.S3
+var s3Uploader *s3manager.Uploader
+
 // Mutable global variables
 // ------------------------
 
 // Current requestID counter, used from many threads, use atomics!
 var requestID int32
+
+// AWS related functions
+// -----------------
+
+func getS3URL(fileName string) string {
+	return "https://" + bucketName + ".s3." + bucketRegion + ".amazonaws.com/" + fileName
+}
+
+func getThumbURL(fileName string) string {
+	return getS3URL("thumbs/" + fileName)
+}
+
+func getVideoURL(fileName string) string {
+	return getS3URL("videos/" + fileName)
+}
+
+func uploadToAWS(fileName string, key string, metaData map[string]*string) (putOutput *s3manager.UploadOutput, err error) {
+	file, err := os.Open(fileName)
+
+	if err != nil {
+		return nil, err
+	}
+
+	uploadResult, err := s3Uploader.Upload(&s3manager.UploadInput{
+		Bucket:   &bucketName,
+		Metadata: metaData,
+		Key:      &key,
+		Body:     file,
+	})
+
+	logError(err, key, "Uploade to AWS")
+	return uploadResult, err
+}
+
+func getMetaFromAWS(key string) (output *s3.HeadObjectOutput, err error) {
+
+	headResult, err := s3Client.HeadObject(&s3.HeadObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+
+	return headResult, err
+}
+
+func deleteFromAWS(key string) (output *s3.DeleteObjectOutput, err error) {
+
+	deleteResult, err := s3Client.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+
+	logError(err, key, "Delete from AWS")
+	return deleteResult, err
+}
 
 // Utility functions
 // -----------------
@@ -140,6 +206,7 @@ type videoToTranscode struct {
 	servePath      string
 	thumbDstPath   string
 	thumbServePath string
+	token          string
 
 	// URLs returned to the user
 	url       string
@@ -155,16 +222,28 @@ type videoToTranscode struct {
 
 // Create a new `videoToTranscode` struct
 func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, user string) *videoToTranscode {
+	var thumbUrl string
+	var videoUrl string
+
+	if useAWS {
+		thumbUrl = getThumbURL(token + ".jpg")
+		videoUrl = getVideoURL(token + ".mp4")
+	} else {
+		thumbUrl = fmt.Sprintf("%s/%s.jpg", storageUri, token)
+		videoUrl = fmt.Sprintf("%s/%s.mp4", storageUri, token)
+	}
+
 	return &videoToTranscode{
 		dlPath:    path.Join(tempBase, token+".dl.mp4"),
 		srcPath:   path.Join(tempBase, token+".src.mp4"),
 		dstPath:   path.Join(tempBase, token+".dst.mp4"),
 		servePath: serveVideoPath,
-		url:       fmt.Sprintf("%s/%s.mp4", storageUri, token),
+		url:       videoUrl,
+		token:     token,
 
 		thumbDstPath:   path.Join(tempBase, token+".jpg"),
 		thumbServePath: serveThumbPath,
-		thumbUrl:       fmt.Sprintf("%s/%s.jpg", storageUri, token),
+		thumbUrl:       thumbUrl,
 
 		deleteUrl: fmt.Sprintf("%s/uploads/%s", apiUri, token),
 
@@ -195,10 +274,21 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	}
 
 	// Move the generated thumbnail to the serve path
-	err = serveCollection.Move(video.thumbDstPath, video.thumbServePath, video.owner)
-	if err != nil {
-		_ = os.Remove(video.thumbDstPath)
-		return err
+	if useAWS {
+		metaMap := make(map[string]*string)
+		metaMap["owner"] = &video.token
+		_, err := uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", metaMap)
+
+		if err != nil {
+			return err
+		}
+
+	} else {
+		err = serveCollection.Move(video.thumbDstPath, video.thumbServePath, video.owner)
+		if err != nil {
+			_ = os.Remove(video.thumbDstPath)
+			return err
+		}
 	}
 
 	return nil
@@ -219,10 +309,21 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	}
 
 	// Move the transcoded video to the serving path
-	err = serveCollection.Move(video.dstPath, video.servePath, video.owner)
-	if err != nil {
-		_ = os.Remove(video.dstPath)
-		return err
+	if useAWS {
+		metaMap := make(map[string]*string)
+		metaMap["owner"] = &video.token
+		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", metaMap)
+		if err != nil {
+			return err
+		}
+
+	} else {
+
+		err = serveCollection.Move(video.dstPath, video.servePath, video.owner)
+		if err != nil {
+			_ = os.Remove(video.dstPath)
+			return err
+		}
 	}
 
 	return nil
@@ -352,23 +453,28 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			return http.StatusInternalServerError, err
 		}
 
-		serveVideoPath := path.Join(serveBase, token+".mp4")
-		serveThumbPath := path.Join(serveBase, token+".jpg")
+		var serveVideoPath string
+		var serveThumbPath string
 
-		// Reserve the owner for the destination files
-		err = serveCollection.Create(serveVideoPath, user)
-		if err != nil {
-			log.Printf("Failed to create video: %s", err)
-			continue
-		}
-		err = serveCollection.Create(serveThumbPath, user)
-		if err != nil {
-			log.Printf("Failed to create thumbnail: %s", err)
-			err := serveCollection.Delete(serveVideoPath, user)
+		if useAWS {
+			serveVideoPath = path.Join(serveBase, token+".mp4")
+			serveThumbPath = path.Join(serveBase, token+".jpg")
+
+			// Reserve the owner for the destination files
+			err = serveCollection.Create(serveVideoPath, user)
 			if err != nil {
-				log.Printf("Failed to remove video: %s", err)
+				log.Printf("Failed to create video: %s", err)
+				continue
 			}
-			continue
+			err = serveCollection.Create(serveThumbPath, user)
+			if err != nil {
+				log.Printf("Failed to create thumbnail: %s", err)
+				err := serveCollection.Delete(serveVideoPath, user)
+				if err != nil {
+					log.Printf("Failed to remove video: %s", err)
+				}
+				continue
+			}
 		}
 
 		video = createVideoToTranscode(token, serveVideoPath, serveThumbPath, user)
@@ -534,31 +640,60 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	token := vars["token"]
 
 	// Delete the owned files
-	serveVideoPath := path.Join(serveBase, token+".mp4")
-	serveThumbPath := path.Join(serveBase, token+".jpg")
 
-	videoErr := serveCollection.Delete(serveVideoPath, user)
-	thumbErr := serveCollection.Delete(serveThumbPath, user)
+	if useAWS {
+		videoHead, err := getMetaFromAWS("videos/" + token + ".mp4")
 
-	logError(videoErr, serveVideoPath, "Delete file")
-	logError(thumbErr, serveThumbPath, "Delete file")
+		if err != nil {
+			return http.StatusForbidden, err
+		}
 
-	if videoErr == nil && thumbErr == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return http.StatusNoContent, nil
-	}
+		if *videoHead.Metadata["Owner"] == token {
+			_, videoErr := deleteFromAWS("videos/" + token + ".mp4")
+			_, thumbErr := deleteFromAWS("thumbs/" + token + ".jpg")
 
-	if ownedfile.IsPermissionDenied(videoErr) {
-		return http.StatusForbidden, videoErr
-	} else if ownedfile.IsPermissionDenied(thumbErr) {
-		return http.StatusForbidden, thumbErr
-	} else if videoErr != nil {
-		return http.StatusInternalServerError, videoErr
-	} else if thumbErr != nil {
-		return http.StatusInternalServerError, thumbErr
+			if videoErr == nil && thumbErr == nil {
+				w.WriteHeader(http.StatusNoContent)
+				return http.StatusNoContent, nil
+			} else if videoErr != nil {
+				return http.StatusInternalServerError, videoErr
+			} else if thumbErr != nil {
+				return http.StatusInternalServerError, thumbErr
+			}
+
+		} else {
+			return http.StatusForbidden, errors.New("Forbidden")
+		}
+
 	} else {
-		return http.StatusInternalServerError, errors.New("Forbidden code path")
+		serveVideoPath := path.Join(serveBase, token+".mp4")
+		serveThumbPath := path.Join(serveBase, token+".jpg")
+
+		videoErr := serveCollection.Delete(serveVideoPath, user)
+		thumbErr := serveCollection.Delete(serveThumbPath, user)
+
+		logError(videoErr, serveVideoPath, "Delete file")
+		logError(thumbErr, serveThumbPath, "Delete file")
+
+		if videoErr == nil && thumbErr == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return http.StatusNoContent, nil
+		}
+
+		if ownedfile.IsPermissionDenied(videoErr) {
+			return http.StatusForbidden, videoErr
+		} else if ownedfile.IsPermissionDenied(thumbErr) {
+			return http.StatusForbidden, thumbErr
+		} else if videoErr != nil {
+			return http.StatusInternalServerError, videoErr
+		} else if thumbErr != nil {
+			return http.StatusInternalServerError, thumbErr
+		} else {
+			return http.StatusInternalServerError, errors.New("Forbidden code path")
+		}
 	}
+
+	return http.StatusInternalServerError, errors.New("Forbidden code path")
 }
 
 // Scans the temporary directories for files, if found add them to the
@@ -650,6 +785,41 @@ func main() {
 
 	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 
+	var err error
+	useAWS, err = strconv.ParseBool(os.Getenv("USE_AWS"))
+
+	if err != nil {
+		log.Printf("Could not parse useAWS variable from environment: %s", err)
+		os.Exit(11)
+	}
+
+	bucketName = os.Getenv("AWS_BUCKET_NAME")
+
+	bucketRegion = os.Getenv("AWS_BUCKET_REGION")
+
+	if bucketName == "" && useAWS {
+		log.Printf("Bucket name is required if using AWS!")
+		os.Exit(11)
+	}
+
+	if bucketRegion == "" && useAWS {
+		log.Printf("Bucket region is required if using AWS!")
+		os.Exit(11)
+	}
+
+	if useAWS {
+		s3Client = s3.New(session.New(&aws.Config{Region: aws.String(bucketRegion)}))
+		s3Uploader = s3manager.NewUploader(session.New(&aws.Config{Region: aws.String(bucketRegion)}))
+
+		err := s3Client.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
+
+		if err != nil {
+			log.Printf("Failed to wait for bucket to exist %s, %s", bucketName, err)
+			os.Exit(11)
+		}
+
+	}
+
 	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
 	if appUri == "" {
 		appUri = layersApiUri
@@ -726,6 +896,9 @@ func main() {
 	}
 
 	log.Printf("Configuration successful")
+	log.Printf("  %12s: %s", "Use AWS", useAWS)
+	log.Printf("  %12s: %s", "AWS bucket name", bucketName)
+	log.Printf("  %12s: %s", "AWS bucket region", bucketRegion)
 	log.Printf("  %12s: %s", "Auth URI", authUri)
 	log.Printf("  %12s: %s/", "API URI", apiUri)
 	log.Printf("  %12s: %s/", "Serve URI", storageUri)
@@ -749,7 +922,7 @@ func main() {
 	port := ":8080"
 
 	log.Printf("Serving at %s", port)
-	err := http.ListenAndServe(port, r)
+	err = http.ListenAndServe(port, r)
 	if err != nil {
 		log.Printf("Failed to start server: %s", err.Error())
 		os.Exit(10)

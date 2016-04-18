@@ -9,6 +9,13 @@ export GOTR_SERVE_PATH=bin/serve
 export GOTR_FAST_TRANSCODE_THREADS=8
 export GOTR_SLOW_TRANSCODE_THREADS=2
 
+# AWS-specific environment variables
+export USE_AWS=0
+export AWS_BUCKET_NAME=aalto-achso
+export AWS_BUCKET_REGION=eu-central-1
+export AWS_ACCESS_KEY_ID=id
+export AWS_SECRET_ACCESS_KEY=key
+
 mkdir -p $GOTR_TEMP_PATH
 mkdir -p $GOTR_SERVE_PATH
 
