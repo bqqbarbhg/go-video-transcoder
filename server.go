@@ -776,9 +776,9 @@ func main() {
 	//   LAYERS_API_URI: URL of the box (should be predefined by Layers Box)
 	//   AUTH_URL_PATH: Path appended to LAYERS_API_URI for the authentication /userinfo endpoint
 	//
-	// standalone:
-	//   gotr_uri: url of this server
-	//   auth_uri: url of the authentication /userinfo endpoint
+	// Standalone:
+	//   GOTR_URI: URL of this server
+	//   AUTH_URI: URL of the authentication /userinfo endpoint
 	// Amazon AWS S3:
 	//   USE_AWS: Whether to enable AWS or not
 	//   AWS_BUCKET_NAME: The name of your bucket
