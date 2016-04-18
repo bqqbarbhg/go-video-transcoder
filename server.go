@@ -85,7 +85,7 @@ func getVideoURL(fileName string) string {
 	return getS3URL("videos/" + fileName)
 }
 
-func uploadToAWS(fileName string, key string, metaData map[string]*string) (putOutput *s3manager.UploadOutput, err error) {
+func uploadToAWS(fileName string, key string, contentType string, metaData map[string]*string) (putOutput *s3manager.UploadOutput, err error) {
 	file, err := os.Open(fileName)
 
 	if err != nil {
@@ -93,10 +93,11 @@ func uploadToAWS(fileName string, key string, metaData map[string]*string) (putO
 	}
 
 	uploadResult, err := s3Uploader.Upload(&s3manager.UploadInput{
-		Bucket:   &bucketName,
-		Metadata: metaData,
-		Key:      &key,
-		Body:     file,
+		Bucket:      &bucketName,
+		ContentType: &contentType,
+		Metadata:    metaData,
+		Key:         &key,
+		Body:        file,
 	})
 
 	logError(err, key, "Uploade to AWS")
@@ -277,7 +278,7 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		_, err := uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", metaMap)
+		_, err := uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", "image/jpeg", metaMap)
 
 		if err != nil {
 			return err
@@ -312,7 +313,7 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", metaMap)
+		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", "video/mp4", metaMap)
 		if err != nil {
 			return err
 		}
@@ -778,6 +779,12 @@ func main() {
 	// Standalone:
 	//   GOTR_URI: URL of this server
 	//   AUTH_URI: URL of the authentication /userinfo endpoint
+	// Amazon AWS S3:
+	//   USE_AWS: Whether to enable AWS or not
+	//   AWS_BUCKET_NAME: The name of your bucket
+	//   AWS_BUCKET_REGION: The region your S3 bucket is located at
+	//   AWS_ACCESS_KEY_ID: The secret id for your app
+	//   AWS_SECRET_ACCESS_KEY : The secret key for your AWS
 	//
 	// Optional:
 	//   GOTR_FAST_TRANSCODE_THREADS: Number of workers that do fast low latency work (default 4)
@@ -896,7 +903,7 @@ func main() {
 	}
 
 	log.Printf("Configuration successful")
-	log.Printf("  %12s: %s", "Use AWS", useAWS)
+	log.Printf("  %12s: %t", "Use AWS", useAWS)
 	log.Printf("  %12s: %s", "AWS bucket name", bucketName)
 	log.Printf("  %12s: %s", "AWS bucket region", bucketRegion)
 	log.Printf("  %12s: %s", "Auth URI", authUri)
