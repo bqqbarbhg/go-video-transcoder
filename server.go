@@ -275,7 +275,12 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", metaMap)
+		_, err := uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", metaMap)
+
+		if err != nil {
+			return err
+		}
+
 	} else {
 		err = serveCollection.Move(video.thumbDstPath, video.thumbServePath, video.owner)
 		if err != nil {
@@ -305,7 +310,6 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		// TODO: Think this through better
 		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", metaMap)
 		if err != nil {
 			return err
