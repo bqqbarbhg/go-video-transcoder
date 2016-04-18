@@ -99,6 +99,7 @@ func uploadToAWS(fileName string, key string, metaData map[string]*string) (putO
 		Body:     file,
 	})
 
+	logError(err, key, "Uploade to AWS")
 	return uploadResult, err
 }
 
@@ -119,6 +120,7 @@ func deleteFromAWS(key string) (output *s3.DeleteObjectOutput, err error) {
 		Key:    &key,
 	})
 
+	logError(err, key, "Delete from AWS")
 	return deleteResult, err
 }
 
