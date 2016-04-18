@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -25,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/gorilla/mux"
 )
 
@@ -62,6 +62,7 @@ var bucketName string
 var bucketRegion string
 
 var s3Client *s3.S3
+var s3Uploader *s3manager.Uploader
 
 // Mutable global variables
 // ------------------------
@@ -69,7 +70,7 @@ var s3Client *s3.S3
 // Current requestID counter, used from many threads, use atomics!
 var requestID int32
 
-// Utility functions
+// AWS related functions
 // -----------------
 
 func getS3URL(fileName string) string {
@@ -84,14 +85,18 @@ func getVideoURL(fileName string) string {
 	return getS3URL("videos/" + fileName)
 }
 
-func uploadToAWS(fileName string, key string, metaData map[string]*string) (putOutput *s3.PutObjectOutput, err error) {
-	fileBytes, err := ioutil.ReadFile(fileName)
+func uploadToAWS(fileName string, key string, metaData map[string]*string) (putOutput *s3manager.UploadOutput, err error) {
+	file, err := os.Open(fileName)
 
-	uploadResult, err := s3Client.PutObject(&s3.PutObjectInput{
+	if err != nil {
+		return nil, err
+	}
+
+	uploadResult, err := s3Uploader.Upload(&s3manager.UploadInput{
 		Bucket:   &bucketName,
 		Metadata: metaData,
 		Key:      &key,
-		Body:     bytes.NewReader(fileBytes),
+		Body:     file,
 	})
 
 	return uploadResult, err
@@ -116,6 +121,9 @@ func deleteFromAWS(key string) (output *s3.DeleteObjectOutput, err error) {
 
 	return deleteResult, err
 }
+
+// Utility functions
+// -----------------
 
 func logError(err error, context string, action string) {
 	if err != nil {
@@ -795,6 +803,7 @@ func main() {
 
 	if useAWS {
 		s3Client = s3.New(session.New(&aws.Config{Region: aws.String(bucketRegion)}))
+		s3Uploader = s3manager.NewUploader(session.New(&aws.Config{Region: aws.String(bucketRegion)}))
 
 		err := s3Client.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
 
