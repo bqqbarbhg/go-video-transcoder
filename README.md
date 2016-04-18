@@ -60,6 +60,12 @@ It also requires a server to serve the actual video files. Note: You forbid the 
     that serves files from `GOTR_SERVE_PATH`
     - `GOTR_API_URL_PATH`: Base path appended to `GOTR_UR` or `LAYERS_API_URI` that
     is used for the API calls
+- Amazon AWS S3:
+    - `USE_AWS`: Whether to enable AWS or not
+    - `AWS_BUCKET_NAME`: The name of your bucket
+    - `AWS_BUCKET_REGION`: The region your S3 bucket is located at
+    - `AWS_ACCESS_KEY_ID`: The secret id for your app
+    - `AWS_SECRET_ACCESS_KEY`: The secret key for your AWS
 - Layers Box:
     - `LAYERS_API_URI`: URL of the box (should be predefined by Layers Box)
     - `AUTH_URL_PATH`: Path appended to `LAYERS_API_URI` for the authentication `/userinfo` endpoint
@@ -79,6 +85,8 @@ If instead of serving videos and thumbnails locally you'd prefer to use AWS S3, 
     AWS_SECRET_ACCESS_KEY=<YOUR AWS SECRET KEY HERE>
 
 ```
+
+If you choose to host files on S3, anything related to .owner files are not in use, as we can use AWS metadata to determine file ownership
 
 #### Usage with Docker
 ```

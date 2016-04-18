@@ -776,9 +776,15 @@ func main() {
 	//   LAYERS_API_URI: URL of the box (should be predefined by Layers Box)
 	//   AUTH_URL_PATH: Path appended to LAYERS_API_URI for the authentication /userinfo endpoint
 	//
-	// Standalone:
-	//   GOTR_URI: URL of this server
-	//   AUTH_URI: URL of the authentication /userinfo endpoint
+	// standalone:
+	//   gotr_uri: url of this server
+	//   auth_uri: url of the authentication /userinfo endpoint
+	// Amazon AWS S3:
+	//   USE_AWS: Whether to enable AWS or not
+	//   AWS_BUCKET_NAME: The name of your bucket
+	//   AWS_BUCKET_REGION: The region your S3 bucket is located at
+	//   AWS_ACCESS_KEY_ID: The secret id for your app
+	//   AWS_SECRET_ACCESS_KEY : The secret key for your AWS
 	//
 	// Optional:
 	//   GOTR_FAST_TRANSCODE_THREADS: Number of workers that do fast low latency work (default 4)
