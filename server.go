@@ -85,7 +85,7 @@ func getVideoURL(fileName string) string {
 	return getS3URL("videos/" + fileName)
 }
 
-func uploadToAWS(fileName string, key string, metaData map[string]*string) (putOutput *s3manager.UploadOutput, err error) {
+func uploadToAWS(fileName string, key string, contentType string, metaData map[string]*string) (putOutput *s3manager.UploadOutput, err error) {
 	file, err := os.Open(fileName)
 
 	if err != nil {
@@ -93,10 +93,11 @@ func uploadToAWS(fileName string, key string, metaData map[string]*string) (putO
 	}
 
 	uploadResult, err := s3Uploader.Upload(&s3manager.UploadInput{
-		Bucket:   &bucketName,
-		Metadata: metaData,
-		Key:      &key,
-		Body:     file,
+		Bucket:      &bucketName,
+		ContentType: &contentType,
+		Metadata:    metaData,
+		Key:         &key,
+		Body:        file,
 	})
 
 	logError(err, key, "Uploade to AWS")
@@ -277,7 +278,7 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		_, err := uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", metaMap)
+		_, err := uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", "image/jpeg", metaMap)
 
 		if err != nil {
 			return err
@@ -312,7 +313,7 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", metaMap)
+		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", "video/mp4", metaMap)
 		if err != nil {
 			return err
 		}
