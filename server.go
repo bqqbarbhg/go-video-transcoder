@@ -62,7 +62,6 @@ var bucketName string
 var bucketRegion string
 
 var s3Client *s3.S3
-var bucket s3.Bucket
 
 // Mutable global variables
 // ------------------------
@@ -794,19 +793,10 @@ func main() {
 		err := s3Client.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
 
 		if err != nil {
-			log.Printf("Failed to wait for bucket to exist %s, %s", bucket, err)
+			log.Printf("Failed to wait for bucket to exist %s, %s", bucketName, err)
 			os.Exit(11)
 		}
 
-		//	key := "thumbs/test.txt"
-
-		//	var results *s3.PutObjectOutput
-
-		//	results, err = s3Client.PutObject(&s3.PutObjectInput{
-		//		Body:   strings.NewReader("asdasasd"),
-		//		Bucket: &bucketName,
-		//		Key:    &key,
-		//	})
 	}
 
 	appUri := strings.TrimSuffix(os.Getenv("GOTR_URI"), "/")
