@@ -10,6 +10,8 @@ RUN mkdir /govitra
 RUN mkdir /go
 ENV GOPATH=/go
 ADD . /govitra
+
+RUN go get github.com/gorilla/mux
 RUN go get github.com/aws/aws-sdk-go/...
 
 EXPOSE 8080
