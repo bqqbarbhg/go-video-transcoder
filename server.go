@@ -57,7 +57,7 @@ var storageUri string
 var apiUri string
 
 // AWS-related things
-var useAWS string
+var useAWS bool
 var bucketName string
 var bucketRegion string
 
@@ -215,7 +215,7 @@ func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath 
 	var thumbUrl string
 	var videoUrl string
 
-	if useAWS == "1" {
+	if useAWS {
 		thumbUrl = getThumbURL(token + ".jpg")
 		videoUrl = getVideoURL(token + ".mp4")
 	} else {
@@ -264,7 +264,7 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 	}
 
 	// Move the generated thumbnail to the serve path
-	if useAWS == "1" {
+	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
 		uploadToAWS(video.thumbDstPath, "thumbs/"+video.token+".jpg", metaMap)
@@ -294,7 +294,7 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	}
 
 	// Move the transcoded video to the serving path
-	if useAWS == "1" {
+	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
 		// TODO: Think this through better
@@ -442,7 +442,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 		var serveVideoPath string
 		var serveThumbPath string
 
-		if useAWS != "1" {
+		if useAWS {
 			serveVideoPath = path.Join(serveBase, token+".mp4")
 			serveThumbPath = path.Join(serveBase, token+".jpg")
 
@@ -627,7 +627,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 	// Delete the owned files
 
-	if useAWS == "1" {
+	if useAWS {
 		videoHead, err := getMetaFromAWS("videos/" + token + ".mp4")
 
 		if err != nil {
@@ -771,23 +771,29 @@ func main() {
 
 	layersApiUri := strings.TrimSuffix(os.Getenv("LAYERS_API_URI"), "/")
 
-	useAWS = os.Getenv("USE_AWS")
+	var err error
+	useAWS, err = strconv.ParseBool(os.Getenv("USE_AWS"))
+
+	if err != nil {
+		log.Printf("Could not parse useAWS variable from environment: %s", err)
+		os.Exit(11)
+	}
 
 	bucketName = os.Getenv("AWS_BUCKET_NAME")
 
 	bucketRegion = os.Getenv("AWS_BUCKET_REGION")
 
-	if bucketName == "" && useAWS == "1" {
+	if bucketName == "" && useAWS {
 		log.Printf("Bucket name is required if using AWS!")
 		os.Exit(11)
 	}
 
-	if bucketRegion == "" && useAWS == "1" {
+	if bucketRegion == "" && useAWS {
 		log.Printf("Bucket region is required if using AWS!")
 		os.Exit(11)
 	}
 
-	if useAWS == "1" {
+	if useAWS {
 		s3Client = s3.New(session.New(&aws.Config{Region: aws.String(bucketRegion)}))
 
 		err := s3Client.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: &bucketName})
@@ -901,7 +907,7 @@ func main() {
 	port := ":8080"
 
 	log.Printf("Serving at %s", port)
-	err := http.ListenAndServe(port, r)
+	err = http.ListenAndServe(port, r)
 	if err != nil {
 		log.Printf("Failed to start server: %s", err.Error())
 		os.Exit(10)
