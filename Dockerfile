@@ -14,6 +14,9 @@ ADD . /govitra
 RUN go get github.com/gorilla/mux
 RUN go get github.com/aws/aws-sdk-go/...
 
+RUN mkdir -p /govitra/bin/temp
+RUN mkdir -p /govitra/bin/serve
+
 EXPOSE 8080
 
 CMD ["bash", "/govitra/start-docker.sh"]
