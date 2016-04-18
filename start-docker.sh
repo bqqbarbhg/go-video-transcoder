@@ -2,5 +2,5 @@
 
 cd /govitra
 go build
-/govitra/govitra &
+exec /govitra/govitra
 exit 0
