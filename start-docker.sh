@@ -2,5 +2,4 @@
 
 cd /govitra
 go build
-./go-video-transcoder
-
+/govitra/govitra
