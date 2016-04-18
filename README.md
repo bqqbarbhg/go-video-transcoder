@@ -84,7 +84,7 @@ If instead of serving videos and thumbnails locally you'd prefer to use AWS S3, 
 ```
     git clone https://github.com/bqqbarbhg/go-video-transcoder
     docker build -t govitra .
-    docker run --env-file=govitra.env 8080:8080 govitra
+    docker run --env-file=govitra.env -p 8080:8080 govitra
 ```
 
 ### Example setup:
