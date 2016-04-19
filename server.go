@@ -100,7 +100,7 @@ func uploadToAWS(fileName string, key string, contentType string, metaData map[s
 		Body:        file,
 	})
 
-	logError(err, key, "Uploade to AWS")
+	logError(err, key, "Upload to AWS")
 	return uploadResult, err
 }
 
@@ -313,7 +313,7 @@ func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
 	if useAWS {
 		metaMap := make(map[string]*string)
 		metaMap["owner"] = &video.token
-		_, err := uploadToAWS(string(video.srcPath), "videos/"+video.token+".mp4", "video/mp4", metaMap)
+		_, err := uploadToAWS(string(video.dstPath), "videos/"+video.token+".mp4", "video/mp4", metaMap)
 		if err != nil {
 			return err
 		}
