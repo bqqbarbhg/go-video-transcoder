@@ -140,10 +140,20 @@ func logError(err error, context string, action string) {
 	}
 }
 
+func authenticateFromMasterSecret(r *http.Request) (err error) {
+	authorization := r.Header.Get("Delete-Authorization")
+
+	if authorization != deleteSecret {
+		return errors.New(fmt.Sprintf("The delete secret %s was wrong!", authorization))
+	} else {
+		return nil
+	}
+}
+
 // Check the authentication from a request and return the user ID, supports:
 // - OIDC `Authentication: Bearer` header
 // - achrails `upload_token` query parameter for form uploads
-func authenticate(r *http.Request) (user string, err error) {
+func authenticateFromOIDC(r *http.Request) (user string, err error) {
 
 	authorization := r.Header.Get("Authorization")
 	upload_token := r.URL.Query().Get("upload_token")
@@ -416,13 +426,29 @@ func wrappedHandler(inner func(http.ResponseWriter, *http.Request) (int, error))
 }
 
 // Wraps a handler function and adds support for:
-// - Authentication, passes the user ID to the wrapped func
+// - Authenticating the request by the master secret (Used for deletion)
 // - Never calls the inner handler if authentication failed
-func authenticatedHandler(inner func(http.ResponseWriter, *http.Request, string) (int, error)) func(http.ResponseWriter, *http.Request) (int, error) {
+func authenticateSecretHandler(inner func(http.ResponseWriter, *http.Request) (int, error)) func(http.ResponseWriter, *http.Request) (int, error) {
 	return func(w http.ResponseWriter, r *http.Request) (int, error) {
 
 		// Authenticate
-		user, err := authenticate(r)
+		err := authenticateFromMasterSecret(r)
+		if err != nil {
+			return http.StatusUnauthorized, err
+		}
+
+		return inner(w, r)
+	}
+}
+
+// Wraps a handler function and adds support for:
+// - Authentication, passes the user ID to the wrapped func
+// - Never calls the inner handler if authentication failed
+func authenticateOIDCHandler(inner func(http.ResponseWriter, *http.Request, string) (int, error)) func(http.ResponseWriter, *http.Request) (int, error) {
+	return func(w http.ResponseWriter, r *http.Request) (int, error) {
+
+		// Authenticate
+		user, err := authenticateFromOIDC(r)
 		if err != nil {
 			return http.StatusUnauthorized, err
 		}
@@ -932,8 +958,8 @@ func main() {
 	// Setup the router and start serving
 	r := mux.NewRouter()
 
-	r.HandleFunc("/uploads", wrappedHandler(authenticatedHandler(uploadHandler))).Methods("POST")
-	r.HandleFunc("/uploads/{token}", wrappedHandler(authenticatedHandler(deleteHandler))).Methods("DELETE")
+	r.HandleFunc("/uploads", wrappedHandler(authenticateOIDCHandler(uploadHandler))).Methods("POST")
+	r.HandleFunc("/uploads/{token}", wrappedHandler(authenticateOIDCHandler(deleteHandler))).Methods("DELETE")
 
 	r.HandleFunc("/uploads", wrappedHandler(optionsHandler("POST"))).Methods("OPTIONS")
 	r.HandleFunc("/uploads/{token}", wrappedHandler(optionsHandler("DELETE"))).Methods("DELETE")
