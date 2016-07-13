@@ -44,6 +44,10 @@ var serveCollection *ownedfile.Collection = ownedfile.NewCollection()
 var fastProcessQueue *workqueue.WorkQueue
 var slowProcessQueue *workqueue.WorkQueue
 
+// This is the token used to authenticate deletion requests from achrails.
+// Very secret!
+var deleteSecret string
+
 // Base paths for directories for temporary files and served files
 // A separate HTTP server should serve files from `serveBase`
 var tempBase string
@@ -766,6 +770,7 @@ func main() {
 	// Resolve URLs from environment variables
 	//
 	// Common:
+	//   GOTR_DELETE_SECRET: The secret key for deleting videos from achrails
 	//   GOTR_TEMP_PATH: Path to download and process videos in
 	//   GOTR_SERVE_PATH: Path to copy transcoded videos _needs_ to be in the same mount as GOTR_TEMP_PATH
 	//                    since the processed videos are renamed to here when done.
@@ -811,6 +816,13 @@ func main() {
 
 	if bucketRegion == "" && useAWS {
 		log.Printf("Bucket region is required if using AWS!")
+		os.Exit(11)
+	}
+
+	deleteSecret = os.Getenv("GOTR_DELETE_SECRET")
+
+	if deleteSecret == "" {
+		log.Printf("Delete secret key is required!")
 		os.Exit(11)
 	}
 
