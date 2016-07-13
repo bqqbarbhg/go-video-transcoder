@@ -124,19 +124,14 @@ func (self *Collection) Move(src string, path string, owner string) error {
 	return os.Rename(src, path)
 }
 
-func (self *Collection) Delete(path string, owner string) error {
+func (self *Collection) Delete(path string) error {
 	self.lock()
 	defer self.unlock()
-
-	err := unsafeCheckOwner(path, owner)
-	if err != nil {
-		return err
-	}
 
 	// Remove the data file first and cancel deletion if it fails, _but_ the file
 	// not existing is not treated as an error, since ownerfiles can exist without
 	// data files.
-	err = os.Remove(path)
+	err := os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}

@@ -500,7 +500,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			err = serveCollection.Create(serveThumbPath, user)
 			if err != nil {
 				log.Printf("Failed to create thumbnail: %s", err)
-				err := serveCollection.Delete(serveVideoPath, user)
+				err := serveCollection.Delete(serveVideoPath)
 				if err != nil {
 					log.Printf("Failed to remove video: %s", err)
 				}
@@ -605,10 +605,10 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 		err := os.Remove(video.srcPath)
 		logError(err, video.srcPath, "Delete source file")
 
-		err = serveCollection.Delete(video.servePath, user)
+		err = serveCollection.Delete(video.servePath)
 		logError(err, video.srcPath, "Delete serve video file")
 
-		err = serveCollection.Delete(video.thumbServePath, user)
+		err = serveCollection.Delete(video.thumbServePath)
 		logError(err, video.srcPath, "Delete serve thumbnail file")
 
 		return http.StatusServiceUnavailable, errors.New("Process queue full")
@@ -659,7 +659,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 // > DELETE /uploads/:token
 // Deletes the video if the user owns it
-func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, error) {
+func deleteHandler(w http.ResponseWriter, r *http.Request) (int, error) {
 
 	// Ignore the body (read to /dev/null)
 	_, err := io.Copy(ioutil.Discard, r.Body)
@@ -673,35 +673,28 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 	// Delete the owned files
 
 	if useAWS {
-		videoHead, err := getMetaFromAWS("videos/" + token + ".mp4")
-
 		if err != nil {
 			return http.StatusForbidden, err
 		}
 
-		if *videoHead.Metadata["Owner"] == token {
-			_, videoErr := deleteFromAWS("videos/" + token + ".mp4")
-			_, thumbErr := deleteFromAWS("thumbs/" + token + ".jpg")
+		_, videoErr := deleteFromAWS("videos/" + token + ".mp4")
+		_, thumbErr := deleteFromAWS("thumbs/" + token + ".jpg")
 
-			if videoErr == nil && thumbErr == nil {
-				w.WriteHeader(http.StatusNoContent)
-				return http.StatusNoContent, nil
-			} else if videoErr != nil {
-				return http.StatusInternalServerError, videoErr
-			} else if thumbErr != nil {
-				return http.StatusInternalServerError, thumbErr
-			}
-
-		} else {
-			return http.StatusForbidden, errors.New("Forbidden")
+		if videoErr == nil && thumbErr == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return http.StatusNoContent, nil
+		} else if videoErr != nil {
+			return http.StatusInternalServerError, videoErr
+		} else if thumbErr != nil {
+			return http.StatusInternalServerError, thumbErr
 		}
 
 	} else {
 		serveVideoPath := path.Join(serveBase, token+".mp4")
 		serveThumbPath := path.Join(serveBase, token+".jpg")
 
-		videoErr := serveCollection.Delete(serveVideoPath, user)
-		thumbErr := serveCollection.Delete(serveThumbPath, user)
+		videoErr := serveCollection.Delete(serveVideoPath)
+		thumbErr := serveCollection.Delete(serveThumbPath)
 
 		logError(videoErr, serveVideoPath, "Delete file")
 		logError(thumbErr, serveThumbPath, "Delete file")
@@ -959,7 +952,7 @@ func main() {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/uploads", wrappedHandler(authenticateOIDCHandler(uploadHandler))).Methods("POST")
-	r.HandleFunc("/uploads/{token}", wrappedHandler(authenticateOIDCHandler(deleteHandler))).Methods("DELETE")
+	r.HandleFunc("/uploads/{token}", wrappedHandler(authenticateSecretHandler(deleteHandler))).Methods("DELETE")
 
 	r.HandleFunc("/uploads", wrappedHandler(optionsHandler("POST"))).Methods("OPTIONS")
 	r.HandleFunc("/uploads/{token}", wrappedHandler(optionsHandler("DELETE"))).Methods("DELETE")
