@@ -140,6 +140,8 @@ func logError(err error, context string, action string) {
 	}
 }
 
+// Authenticates request from the master secret
+//  - Used for permanently deleting videos from achrails rake task
 func authenticateFromMasterSecret(r *http.Request) (err error) {
 	authorization := r.Header.Get("Delete-Authorization")
 
@@ -426,7 +428,7 @@ func wrappedHandler(inner func(http.ResponseWriter, *http.Request) (int, error))
 }
 
 // Wraps a handler function and adds support for:
-// - Authenticating the request by the master secret (Used for deletion)
+// - Authenticating the request from the master secret (Used for deletion)
 // - Never calls the inner handler if authentication failed
 func authenticateSecretHandler(inner func(http.ResponseWriter, *http.Request) (int, error)) func(http.ResponseWriter, *http.Request) (int, error) {
 	return func(w http.ResponseWriter, r *http.Request) (int, error) {

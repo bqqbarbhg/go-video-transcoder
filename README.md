@@ -32,6 +32,8 @@ or
 
 These URLs should not be made by hand as the ID is not a real thing,
 but the URL can be retrieved from the upload JSON response `deleteUrl`
+You should pass the header 'Delete-Authorization' with the correct shared token
+between achrails and govitra to authenticate the deletion request!
 
 Returns `204 No Content`
 or
@@ -49,7 +51,7 @@ or
 #### Environment variables
 
 Govitra itself requires some amount of configuration to run, this is provided as environment variables.
-It also requires a server to serve the actual video files. Note: You forbid the server from serving
+It also requires a server to serve the actual video files, or AWS credentials. Note: You forbid the server from serving
 `.owner` files as they are used to store who uploaded the video.
 
 - Common:
@@ -60,6 +62,7 @@ It also requires a server to serve the actual video files. Note: You forbid the 
     that serves files from `GOTR_SERVE_PATH`
     - `GOTR_API_URL_PATH`: Base path appended to `GOTR_UR` or `LAYERS_API_URI` that
     is used for the API calls
+    - `GOTR_DELETE_SECRET`: The key used to authenticate delete requests
 - Amazon AWS S3:
     - `USE_AWS`: Whether to enable AWS or not
     - `AWS_BUCKET_NAME`: The name of your bucket
