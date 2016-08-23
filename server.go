@@ -225,6 +225,9 @@ type videoToTranscode struct {
 	thumbServePath string
 	token          string
 
+	cropEndTime   *int
+	cropStartTime *int
+
 	// URLs returned to the user
 	url       string
 	thumbUrl  string
@@ -238,7 +241,7 @@ type videoToTranscode struct {
 }
 
 // Create a new `videoToTranscode` struct
-func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, user string) *videoToTranscode {
+func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath string, cropStartTime *int, cropEndTime *int, user string) *videoToTranscode {
 	var thumbUrl string
 	var videoUrl string
 
@@ -257,6 +260,9 @@ func createVideoToTranscode(token string, serveVideoPath string, serveThumbPath 
 		servePath: serveVideoPath,
 		url:       videoUrl,
 		token:     token,
+
+		cropEndTime:   cropEndTime,
+		cropStartTime: cropStartTime,
 
 		thumbDstPath:   path.Join(tempBase, token+".jpg"),
 		thumbServePath: serveThumbPath,
@@ -314,13 +320,20 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 // Just a wrapper for the `transcode` package:
 // - Moves the video to the destination when completed
 func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
+	//opts := []string{"-ss ", strconv.Itoa(video.cropStartTime), "-t ", strconv.Itoa(video.cropEndTime - video.cropStartTime)}
 
 	// Do the transcoding itself
 	options := transcode.Options{
 		CompensateRotation: video.rotation,
 		Quality:            quality,
 	}
-	err := transcode.TranscodeMP4(video.srcPath, video.dstPath, &options)
+
+	trimOptions := transcode.TrimOptions{
+		Start: video.cropStartTime,
+		End:   video.cropEndTime,
+	}
+
+	err := transcode.TranscodeMP4(video.srcPath, video.dstPath, &options, &trimOptions)
 	if err != nil {
 		return err
 	}
@@ -510,7 +523,23 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 			}
 		}
 
-		video = createVideoToTranscode(token, serveVideoPath, serveThumbPath, user)
+		var startTrimPointer *int
+		var endTrimPointer *int
+
+		startTimeStr := r.URL.Query().Get("start")
+		endTimeStr := r.URL.Query().Get("end")
+
+		if startTimeStr != "" && endTimeStr != "" {
+			startTime, startErr := strconv.Atoi(startTimeStr)
+			endTime, endErr := strconv.Atoi(endTimeStr)
+
+			if startErr == nil && endErr == nil {
+				startTrimPointer = &startTime
+				endTrimPointer = &endTime
+			}
+		}
+
+		video = createVideoToTranscode(token, serveVideoPath, serveThumbPath, startTrimPointer, endTrimPointer, user)
 		break
 	}
 
@@ -772,7 +801,7 @@ func queuePendingVideosToTranscode() {
 			continue
 		}
 
-		video := createVideoToTranscode(token, serveVideoPath, serveThumbPath, videoOwner)
+		video := createVideoToTranscode(token, serveVideoPath, serveThumbPath, nil, nil, videoOwner)
 
 		didAdd := fastProcessQueue.AddIfSpace(func() {
 			processVideoFast(video)

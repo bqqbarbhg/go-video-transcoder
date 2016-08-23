@@ -71,6 +71,12 @@ const (
 	QualityHigh
 )
 
+// Trimming options for transcoding the video
+type TrimOptions struct {
+	Start *int
+	End   *int
+}
+
 // For use with `TranscodeMP4`
 type Options struct {
 
@@ -123,9 +129,24 @@ func appendOptions(args []string, options *Options) []string {
 	return args
 }
 
+func appendTrimOptions(args []string, trimOptions *TrimOptions) []string {
+	if trimOptions == nil || trimOptions.End == nil || trimOptions.Start == nil {
+		return args
+	}
+
+	trimArgs := []string{
+		"-ss", strconv.Itoa(*trimOptions.Start / 1000),
+		"-t", strconv.Itoa((*trimOptions.End - *trimOptions.Start) / 1000),
+	}
+
+	args = append(args, trimArgs...)
+
+	return args
+}
+
 // Synchronously transcode a video from `src` to `dst` using `options`
 // See `TranscodeOptions`
-func TranscodeMP4(src string, dst string, options *Options) error {
+func TranscodeMP4(src string, dst string, options *Options, trimOptions *TrimOptions) error {
 	args := []string{
 		// Input file
 		"-i", src,
@@ -145,6 +166,9 @@ func TranscodeMP4(src string, dst string, options *Options) error {
 
 	// Options
 	args = appendOptions(args, options)
+
+	// Trimming options
+	args = appendTrimOptions(args, trimOptions)
 
 	// Output file
 	args = append(args, dst)
