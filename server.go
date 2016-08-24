@@ -506,6 +506,10 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 		} else {
 			return http.StatusBadRequest, errors.New("Trim start or end were malformed!")
 		}
+
+		if endTime < startTime {
+			return http.StatusBadRequest, errors.New("Trim end cannot be shorter than trim start")
+		}
 	}
 
 	// Generate an unique token and assign the file to the current user
