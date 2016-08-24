@@ -320,8 +320,6 @@ func generateThumbnail(video *videoToTranscode, relativeTime float64) error {
 // Just a wrapper for the `transcode` package:
 // - Moves the video to the destination when completed
 func transcodeVideo(video *videoToTranscode, quality transcode.Quality) error {
-	//opts := []string{"-ss ", strconv.Itoa(video.cropStartTime), "-t ", strconv.Itoa(video.cropEndTime - video.cropStartTime)}
-
 	// Do the transcoding itself
 	options := transcode.Options{
 		CompensateRotation: video.rotation,
@@ -492,6 +490,24 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 
 	var video *videoToTranscode
 
+	var startTrimPointer *int
+	var endTrimPointer *int
+
+	startTimeStr := r.URL.Query().Get("start")
+	endTimeStr := r.URL.Query().Get("end")
+
+	if startTimeStr != "" && endTimeStr != "" {
+		startTime, startErr := strconv.Atoi(startTimeStr)
+		endTime, endErr := strconv.Atoi(endTimeStr)
+
+		if startErr == nil && endErr == nil {
+			startTrimPointer = &startTime
+			endTrimPointer = &endTime
+		} else {
+			return http.StatusBadRequest, errors.New("Trim start or end were malformed!")
+		}
+	}
+
 	// Generate an unique token and assign the file to the current user
 	for try := 0; try < 10; try++ {
 		token, err := generateToken()
@@ -520,22 +536,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, user string) (int, er
 					log.Printf("Failed to remove video: %s", err)
 				}
 				continue
-			}
-		}
-
-		var startTrimPointer *int
-		var endTrimPointer *int
-
-		startTimeStr := r.URL.Query().Get("start")
-		endTimeStr := r.URL.Query().Get("end")
-
-		if startTimeStr != "" && endTimeStr != "" {
-			startTime, startErr := strconv.Atoi(startTimeStr)
-			endTime, endErr := strconv.Atoi(endTimeStr)
-
-			if startErr == nil && endErr == nil {
-				startTrimPointer = &startTime
-				endTrimPointer = &endTime
 			}
 		}
 
