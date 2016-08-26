@@ -12,7 +12,8 @@ The API is very simple and has only two endpoints, one for uploading and one for
 
 ### Uploading
 
-`POST /uploads` with raw video data in body.
+`POST /uploads` with raw video data in body. You can also trim videos by passing the query parameters `end` and `start`, to crop off
+length from the video beginning and end, respectively. Both the timestamps should be specified in milliseconds.
 
 ```json
 {
